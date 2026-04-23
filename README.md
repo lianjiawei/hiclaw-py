@@ -67,7 +67,19 @@ python -m pip install -e .
 
 ## 环境变量
 
-项目通过 `.env` 读取配置，至少需要这些变量：
+项目通过 `.env` 读取配置。仓库中已经提供了示例文件：
+
+- `.env.example`
+
+拿到项目后，建议先复制一份：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+然后把 `.env` 里的占位值替换成你自己的真实配置。
+
+至少需要这些变量：
 
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
@@ -91,6 +103,7 @@ WORKSPACE_DIR=E:\AICode\AIProRepo\garveyclaw_py\workspace
 - `ANTHROPIC_BASE_URL`：兼容 Anthropic 协议的服务地址
 - `ANTHROPIC_MODEL`：默认模型名
 - `WORKSPACE_DIR`：工具默认工作的目录；不配置时默认使用项目根目录下的 `workspace/`
+- `SCHEDULER_INTERVAL_SECONDS`：定时任务轮询间隔，默认 `10`
 
 运行时还会自动在项目根目录创建：
 
@@ -121,6 +134,44 @@ garveyclaw
 ```text
 Bot is running...
 ```
+
+## 克隆后如何替换成自己的配置
+
+如果别人把这个项目克隆到自己的电脑上，通常只需要改这几类内容就能运行：
+
+1. 替换 `.env` 中的私有配置
+
+- `TELEGRAM_BOT_TOKEN`
+- `OWNER_ID`
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_BASE_URL`
+- `ANTHROPIC_MODEL`
+
+2. 按需要修改工作区目录
+
+如果不想用默认的 `workspace/`，可以在 `.env` 中修改：
+
+```env
+WORKSPACE_DIR=你的项目工作区路径
+```
+
+3. 如果要改课程版文件名
+
+当前课程版文件是：
+
+- `claw_course_bot.py`
+
+如果你想把它改成自己的名字，比如：
+
+- `my_agent_bot.py`
+
+那么通常只需要改：
+
+- 文件名本身
+- 课程文档里对这个文件名的引用
+- 如果代码中的启动提示文案想一起个性化，也可以顺手调整
+
+代码逻辑本身不会因为文件名变化而失效，因为当前课程版没有依赖固定模块导入名。
 
 ## 当前工具能力
 
