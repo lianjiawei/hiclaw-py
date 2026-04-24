@@ -16,22 +16,24 @@ from garveyclaw.claude_client import ClaudeServiceError, ask_claude
 from garveyclaw.config import TELEGRAM_BOT_TOKEN
 from garveyclaw.memory_store import append_long_term_memory, load_long_term_memory
 from garveyclaw.scheduler import (
+    cancel_scheduled_task,
     create_scheduled_task,
     format_schedule_description,
     list_scheduled_tasks,
     parse_natural_schedule,
-    cancel_scheduled_task,
     setup_scheduler,
 )
 from garveyclaw.scheduler_store import init_task_db
 from garveyclaw.session_store import clear_session_id
+from garveyclaw.skill_store import get_skill, list_skills
 from garveyclaw.telegram_formatting import format_telegram_text
 
 logger = logging.getLogger(__name__)
 
 
 async def reply_plain_text(update: Update, text: str) -> None:
-    # 兜底纯文本回复，用于错误提示或格式化回退。
+    """发送纯文本回复，用于错误提示或格式化回退。"""
+
     if not update.message:
         return
 
@@ -39,7 +41,8 @@ async def reply_plain_text(update: Update, text: str) -> None:
 
 
 async def reply_formatted_text(update: Update, text: str) -> None:
-    # 正常情况下优先发送格式化文本。
+    """优先发送格式化文本，失败时回退到纯文本。"""
+
     if not update.message:
         return
 
@@ -51,14 +54,14 @@ async def reply_formatted_text(update: Update, text: str) -> None:
                 disable_web_page_preview=True,
             )
         except BadRequest:
-            # Telegram 无法解析格式化内容时，回退到纯文本。
             logger.warning("Telegram formatted reply failed, falling back to plain text", exc_info=True)
             await reply_plain_text(update, text)
             return
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 非 owner 或非文本消息直接忽略，不进入模型调用链路。
+    """处理普通文本消息。"""
+
     if not update.message or not update.message.text:
         return
     if not is_owner(update):
@@ -106,7 +109,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 只对 owner 响应 /start，其余用户保持静默。
+    """响应 /start，介绍当前机器人支持的主要能力。"""
+
     if not update.message:
         return
     if not is_owner(update):
@@ -114,15 +118,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(
         "你好，我是你的机器人。\n\n"
-        "我可以回答问题、使用内置 Claude 工具、操作工作区，并继续之前保存的会话。\n"
+        "我可以回答问题、使用 Claude 内置工具、操作工作区，并继续之前保存的会话。\n"
         "还支持定时任务，例如“30秒后提醒我喝水”“每天下午3点提醒我站起来活动一下”。\n"
-        "可以使用 /memory 查看长期记忆，使用 /remember 追加长期记忆，使用 /reset 清空当前会话，"
+        "可以使用 /memory 查看长期记忆，使用 /remember 追加长期记忆，使用 /reset 清空当前会话。\n"
+        "使用 /skills 查看当前可用的 skills。\n"
         "使用 /schedule_in、/tasks、/cancel 管理定时任务。"
     )
 
 
 async def reset_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 清空本地保存的 session_id，下一次消息会从新会话开始。
+    """清空当前 session，让下一条消息从新会话开始。"""
+
     if not update.message:
         return
     if not is_owner(update):
@@ -133,7 +139,8 @@ async def reset_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def show_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 查看当前长期记忆文件的内容。
+    """查看当前长期记忆内容。"""
+
     if not update.message:
         return
     if not is_owner(update):
@@ -143,7 +150,8 @@ async def show_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 把一条用户指定的内容追加到长期记忆文件中。
+    """把用户指定内容追加到长期记忆。"""
+
     if not update.message:
         return
     if not is_owner(update):
@@ -158,8 +166,41 @@ async def remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_plain_text(update, "长期记忆已更新。")
 
 
+async def show_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """查看当前可用的 skills，或查看某个 skill 的详细说明。"""
+
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+
+    if not context.args:
+        lines = ["当前可用的 skills："]
+        for skill in list_skills():
+            lines.append(f"- {skill.name}：{skill.description}")
+        lines.append("\n你也可以发送 /skills skill_name 查看单个 skill 的详情。")
+        await reply_plain_text(update, "\n".join(lines))
+        return
+
+    skill_name = context.args[0].strip().lower()
+    skill = get_skill(skill_name)
+    if skill is None:
+        await reply_plain_text(update, f"没有找到名为 {skill_name} 的 skill。")
+        return
+
+    detail = skill.file_path.read_text(encoding="utf-8").strip() if skill.file_path.exists() else "这个 skill 文件暂时不存在。"
+    await reply_plain_text(
+        update,
+        f"Skill: {skill.name}\n"
+        f"标题：{skill.title}\n"
+        f"说明：{skill.description}\n\n"
+        f"{detail}",
+    )
+
+
 async def schedule_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 命令式创建一条若干秒后执行的单次定时任务。
+    """通过命令创建一个单次定时任务。"""
+
     if not update.message:
         return
     if not is_owner(update):
@@ -203,7 +244,8 @@ async def schedule_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 列出当前所有 active 状态的定时任务。
+    """列出当前待执行的定时任务。"""
+
     if not update.message:
         return
     if not is_owner(update):
@@ -224,7 +266,8 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cancel_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 取消一条未执行的定时任务。
+    """取消一个未执行的定时任务。"""
+
     if not update.message:
         return
     if not is_owner(update):
@@ -243,12 +286,14 @@ async def cancel_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # 捕获没有被局部 handler 处理的异常，便于统一排查。
+    """兜底记录没有被局部 handler 处理的异常。"""
+
     logger.exception("Unhandled exception in Telegram application", exc_info=context.error)
 
 
 async def post_init(application: Application) -> None:
-    # 启动时初始化任务数据库并拉起调度器。
+    """启动时初始化定时任务数据库并拉起调度器。"""
+
     await init_task_db()
     scheduler = setup_scheduler(application.bot)
     scheduler.start()
@@ -256,11 +301,13 @@ async def post_init(application: Application) -> None:
 
 
 def build_application() -> Application:
-    # 创建 Telegram 应用并注册命令、消息和全局错误处理器。
+    """创建 Telegram 应用并注册命令、消息和错误处理器。"""
+
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("memory", show_memory))
     app.add_handler(CommandHandler("remember", remember))
+    app.add_handler(CommandHandler("skills", show_skills))
     app.add_handler(CommandHandler("reset", reset_session))
     app.add_handler(CommandHandler("schedule_in", schedule_in))
     app.add_handler(CommandHandler("tasks", list_tasks))

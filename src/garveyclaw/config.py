@@ -11,6 +11,8 @@ DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 SESSION_FILE = DATA_DIR / "garveyclaw_session.json"
 TASK_DB_FILE = DATA_DIR / "garveyclaw_tasks.db"
+SKILLS_DIR = PROJECT_ROOT / "skills"
+SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 
 WORKSPACE_DIR = Path(os.getenv("WORKSPACE_DIR", str(PROJECT_ROOT / "workspace"))).resolve()
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)

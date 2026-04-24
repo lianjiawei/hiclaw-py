@@ -21,6 +21,7 @@ from garveyclaw.config import (
     WORKSPACE_DIR,
 )
 from garveyclaw.memory_store import append_conversation_record, load_long_term_memory
+from garveyclaw.skill_store import build_skill_prompt
 from garveyclaw.session_store import load_session_id, save_session_id
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,13 @@ class ClaudeServiceError(Exception):
     """统一表示模型调用失败。"""
 
 
-def build_system_prompt() -> str:
-    # 给模型补充当前运行环境、长期记忆和工具使用约束。
+def build_system_prompt(prompt: str) -> str:
+    """构造本轮 Agent 调用使用的 system prompt。"""
+
     long_term_memory = load_long_term_memory()
+    selected_skills, skill_prompt = build_skill_prompt(prompt)
+    selected_skill_names = ", ".join(skill.name for skill in selected_skills) or "无"
+
     return f"""
 你现在运行在一个 Telegram 机器人中。
 
@@ -44,6 +49,11 @@ def build_system_prompt() -> str:
 
 下面是从 CLAUDE.md 读取到的长期记忆：
 {long_term_memory}
+
+本轮命中的 skill：
+{selected_skill_names}
+
+{skill_prompt}
 
 规则：
 1. 当用户询问文件、目录或当前时间时，优先使用工具。
@@ -58,8 +68,9 @@ def build_system_prompt() -> str:
 
 
 def build_tool_hooks(bot, chat_id: int) -> dict[str, list[HookMatcher]]:
+    """构造工具执行过程的 Telegram 状态通知。"""
+
     async def notify_tool_start(hook_input, tool_use_id, context) -> dict:
-        # 工具开始前先发一条状态消息，方便在 Telegram 里观察执行过程。
         await bot.send_message(chat_id=chat_id, text=f"[Tool Start] {hook_input['tool_name']}")
         return {}
 
@@ -79,6 +90,8 @@ def build_tool_hooks(bot, chat_id: int) -> dict[str, list[HookMatcher]]:
 
 
 async def ask_claude(prompt: str, update: Update) -> str:
+    """处理来自 Telegram 的普通消息调用。"""
+
     if not update.effective_chat:
         raise ClaudeServiceError("Missing Telegram chat context.")
 
@@ -91,7 +104,8 @@ async def ask_claude(prompt: str, update: Update) -> str:
 
 
 async def run_agent(prompt: str, bot, chat_id: int, continue_session: bool) -> str:
-    # 显式传入模型调用配置，避免运行时依赖外部隐式环境。
+    """运行一次 Claude Agent，并负责 session 与对话记录落盘。"""
+
     env = {
         "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
         "ANTHROPIC_BASE_URL": ANTHROPIC_BASE_URL,
@@ -105,7 +119,7 @@ async def run_agent(prompt: str, bot, chat_id: int, continue_session: bool) -> s
         env=env,
         cwd=str(WORKSPACE_DIR),
         tools=CLAUDE_TOOLS_PRESET,
-        system_prompt=build_system_prompt(),
+        system_prompt=build_system_prompt(prompt),
         mcp_servers={"garveyclaw": tool_server},
         allowed_tools=ALLOWED_TOOLS,
         hooks=build_tool_hooks(bot, chat_id),
@@ -120,7 +134,6 @@ async def run_agent(prompt: str, bot, chat_id: int, continue_session: bool) -> s
     try:
         async with AGENT_LOCK:
             async for message in query(prompt=prompt, options=options):
-                # 同时兼容中间文本块和最终结果消息。
                 if getattr(message, "session_id", None):
                     latest_session_id = message.session_id
                 if isinstance(message, AssistantMessage):
@@ -141,5 +154,4 @@ async def run_agent(prompt: str, bot, chat_id: int, continue_session: bool) -> s
         save_session_id(latest_session_id)
 
     append_conversation_record(prompt, response, latest_session_id if continue_session else None)
-
     return response
