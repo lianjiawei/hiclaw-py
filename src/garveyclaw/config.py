@@ -26,7 +26,7 @@ OWNER_ID = int(os.environ["OWNER_ID"])
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "qwen3.6-plus")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL")
 
 CLAUDE_TOOLS_PRESET = {"type": "preset", "preset": "claude_code"}
 
