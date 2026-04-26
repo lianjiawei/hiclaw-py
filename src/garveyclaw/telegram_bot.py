@@ -22,7 +22,7 @@ from garveyclaw.config import (
     TELEGRAM_READ_TIMEOUT,
     TELEGRAM_WRITE_TIMEOUT,
 )
-from garveyclaw.media_store import save_photo_message
+from garveyclaw.media_store import save_photo_message, save_voice_message
 from garveyclaw.memory_store import append_long_term_memory, load_long_term_memory
 from garveyclaw.scheduler import (
     cancel_scheduled_task,
@@ -35,6 +35,7 @@ from garveyclaw.scheduler import (
 from garveyclaw.scheduler_store import init_task_db
 from garveyclaw.session_store import clear_session_id
 from garveyclaw.skill_store import get_skill, list_skills
+from garveyclaw.speech_client import SpeechRecognitionError, transcribe_voice
 from garveyclaw.telegram_formatting import format_telegram_text
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,41 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await reply_plain_text(update, "抱歉，机器人处理图片时出了点问题。请稍后再试。")
 
 
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """处理语音消息：保存语音，转写后交给 Agent。"""
+
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+
+    try:
+        voice_path = await save_voice_message(update.message)
+        transcript = transcribe_voice(voice_path)
+        prompt = (
+            "用户发送了一条语音消息。\n"
+            f"语音本地路径：{voice_path}\n"
+            f"语音转写文本：{transcript}\n\n"
+            "请把这条语音转写文本当作用户的真实输入来处理。"
+        )
+        response = await ask_claude(prompt, update)
+        await reply_formatted_text(update, response)
+    except SpeechRecognitionError as exc:
+        logger.warning("Speech recognition failed", exc_info=True)
+        await reply_plain_text(update, f"语音已保存，但语音转文字失败：{exc}")
+    except ClaudeServiceError:
+        await reply_plain_text(update, "语音已转写，但这次调用模型服务失败了。请稍后再试一次。")
+    except NetworkError:
+        logger.warning("Telegram network error while handling voice", exc_info=True)
+        await reply_plain_text(update, "抱歉，当前网络连接不稳定，语音处理失败。请稍后重试。")
+    except TelegramError:
+        logger.exception("Telegram API error while handling voice")
+        await reply_plain_text(update, "抱歉，语音下载或消息发送失败了。请稍后重试。")
+    except Exception:
+        logger.exception("Unexpected error while handling voice")
+        await reply_plain_text(update, "抱歉，机器人处理语音时出了点问题。请稍后再试。")
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """响应 /start，介绍当前机器人支持的主要能力。"""
 
@@ -160,7 +196,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(
         "你好，我是你的机器人。\n\n"
-        "我可以回答问题、处理文字和图片消息、使用 Claude 内置工具、操作工作区，并继续之前保存的会话。\n"
+        "我可以回答问题、处理文字、图片和语音消息，使用 Claude 内置工具，操作工作区，并继续之前保存的会话。\n"
         "还支持定时任务，例如“30秒后提醒我喝水”“每天下午3点提醒我站起来活动一下”。\n"
         "可以使用 /memory 查看长期记忆，使用 /remember 追加长期记忆，使用 /reset 清空当前会话。\n"
         "使用 /skills 查看当前可用的 skills。\n"
@@ -368,6 +404,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("tasks", list_tasks))
     app.add_handler(CommandHandler("cancel", cancel_task))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
     return app

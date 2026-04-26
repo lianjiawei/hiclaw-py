@@ -3,10 +3,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# 从 .env 加载运行配置，保持本地开发和部署读取方式一致。
-load_dotenv()
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# 从项目根目录的 .env 加载配置，避免从其他目录启动时找不到环境变量。
+load_dotenv(PROJECT_ROOT / ".env")
+
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 SESSION_FILE = DATA_DIR / "garveyclaw_session.json"
@@ -26,14 +27,20 @@ MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 CLAUDE_MEMORY_FILE = MEMORY_DIR / "CLAUDE.md"
 CONVERSATIONS_DIR = MEMORY_DIR / "conversations"
 CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
+
 SCHEDULER_INTERVAL_SECONDS = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "30"))
 SHOW_TOOL_TRACE = os.getenv("SHOW_TOOL_TRACE", "0") == "1"
+
 TELEGRAM_CONNECT_TIMEOUT = float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "30"))
 TELEGRAM_READ_TIMEOUT = float(os.getenv("TELEGRAM_READ_TIMEOUT", "30"))
 TELEGRAM_WRITE_TIMEOUT = float(os.getenv("TELEGRAM_WRITE_TIMEOUT", "30"))
 TELEGRAM_POOL_TIMEOUT = float(os.getenv("TELEGRAM_POOL_TIMEOUT", "30"))
 TELEGRAM_POLLING_TIMEOUT = int(os.getenv("TELEGRAM_POLLING_TIMEOUT", "30"))
 TELEGRAM_BOOTSTRAP_RETRIES = int(os.getenv("TELEGRAM_BOOTSTRAP_RETRIES", "5"))
+
+# 语音识别配置：none 表示关闭，vosk 表示使用本地 Vosk 模型。
+ASR_PROVIDER = os.getenv("ASR_PROVIDER", "none")
+VOSK_MODEL_DIR = os.getenv("VOSK_MODEL_DIR")
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 OWNER_ID = int(os.environ["OWNER_ID"])
