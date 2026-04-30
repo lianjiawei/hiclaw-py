@@ -34,7 +34,7 @@
     <marker id="arrow-blue" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="10" markerHeight="8" orient="auto">
       <path d="M1 1 L9 4 L1 7" stroke="#2563eb" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     </marker>
-    <marker id="arrow-orange" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="10" markerHeight="8" orient="auto">
+    <marker id="arrow-orange" viewBox="0 0 10 8" refX="" refY="4" markerWidth="10" markerHeight="8" orient="auto">
       <path d="M1 1 L9 4 L1 7" stroke="#f97316" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     </marker>
     <marker id="arrow-green" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="10" markerHeight="8" orient="auto">
@@ -76,7 +76,7 @@
   <rect x="756" y="142" width="212" height="118" rx="22" fill="#ffffff"/>
   <text x="784" y="176" class="title">app.py</text>
   <text x="784" y="198" class="sub">Unified startup entry</text>
-  <text x="784" y="218" class="sub">Telegram main thread + Feishu background thread</text>
+  <text x="784" y="218" class="sub">Telegram + Feishu thread</text>
 
   <path d="M682 202 C712 202 724 202 756 202" stroke="#2563eb" stroke-width="2.0" marker-end="url(#arrow-blue)"/>
   <text x="696" y="190" class="flow">events</text>
@@ -106,7 +106,7 @@
   <text x="1154" y="200" class="sub">Bundled Claude CLI</text>
   <text x="1154" y="220" class="sub">Claude Code tools + MCP</text>
   <rect x="1064" y="238" width="222" height="34" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
-  <text x="1096" y="260" class="mono">ANTHROPIC_BASE_URL</text>
+  <text x="1120" y="260" class="mono">ANTHROPIC_BASE_URL</text>
 
   <text x="1080" y="332" class="h2">OpenAI Provider</text>
   <rect x="1038" y="352" width="304" height="150" rx="22" fill="#ffffff"/>
@@ -148,25 +148,25 @@
   <rect x="934" y="578" width="406" height="74" rx="22" fill="#ffffff"/>
   <text x="962" y="610" class="title">skill_store.py</text>
   <text x="962" y="632" class="sub">Loads local skill prompts into Claude context</text>
-  <path d="M934 614 C908 606 894 572 860 534" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <path d="M934 614 C908 606 894 572 860 544" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
 
   <text x="62" y="770" class="h2">Scheduler</text>
   <rect x="54" y="788" width="1286" height="84" rx="22" fill="#ffffff"/>
   <text x="82" y="820" class="title">scheduler.py + scheduler_store.py</text>
   <text x="82" y="842" class="sub">Telegram text → parse → create task → SQLite → check due → run agent</text>
-  <rect x="596" y="804" width="106" height="32" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="628" y="824" class="mono">parse</text>
-  <path d="M704 820 L732 820" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <rect x="736" y="804" width="118" height="32" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
-  <text x="766" y="824" class="mono">create task</text>
-  <path d="M856 820 L884 820" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <rect x="888" y="804" width="100" height="32" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
-  <text x="920" y="824" class="mono">SQLite</text>
-  <path d="M990 820 L1018 820" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <rect x="1022" y="804" width="110" height="32" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="1050" y="824" class="mono">check due</text>
-  <path d="M1134 820 L1162 820" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <rect x="1166" y="804" width="106" height="32" rx="12" fill="#ecfdf5" stroke="#bbf7d0"/>
-  <text x="1198" y="824" class="mono">run agent</text>
-  <path d="M1220 804 C1178 746 1032 596 850 534" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <rect x="596" y="810" width="106" height="32" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="628" y="830" class="mono">parse</text>
+  <path d="M704 825 L732 825" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="736" y="810" width="118" height="32" rx="12" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="766" y="830" class="mono">create task</text>
+  <path d="M856 825 L884 825" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="888" y="810" width="100" height="32" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+  <text x="920" y="830" class="mono">SQLite</text>
+  <path d="M990 825 L1018 825" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="1022" y="810" width="110" height="32" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="1050" y="830" class="mono">check due</text>
+  <path d="M1134 825 L1162 825" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="1166" y="810" width="106" height="32" rx="12" fill="#ecfdf5" stroke="#bbf7d0"/>
+  <text x="1198" y="830" class="mono">run agent</text>
+  <path d="M1220 804 C1178 746 1032 596 850 528" stroke="#94a3b8" stroke-width="1.8" marker-end="url(#arrow)"/>
 </svg>
