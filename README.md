@@ -48,7 +48,7 @@ HiClaw Py 是一个支持多通道交互和双 Provider 路由的个人智能体
 - Python `>=3.12`
 - Conda 或 Miniconda
 - Git
-- 一个 Telegram Bot Token
+- 至少一种消息入口配置（如 Telegram Bot 或飞书应用）
 - 一个兼容 Anthropic API 协议的模型服务
 
 可选语音识别要求：
@@ -114,7 +114,7 @@ Copy-Item .env.example .env
 
 然后把 `.env` 里的占位值替换成你自己的配置。
 
-最小必填配置：
+最小 Claude 路线配置：
 
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
@@ -126,8 +126,8 @@ ANTHROPIC_MODEL=your_model_name
 
 常用配置说明：
 
-- `TELEGRAM_BOT_TOKEN`：Telegram Bot Token，可以从 BotFather 获取。
-- `OWNER_ID`：允许使用机器人的 Telegram 用户 ID，非 owner 用户会被忽略。
+- `TELEGRAM_BOT_TOKEN`：Telegram 通道凭据，可以从 BotFather 获取；只启用飞书或 TUI 时可不填。
+- `OWNER_ID`：Telegram Owner 用户 ID，Telegram 通道会按这个值限制使用者。
 - `ANTHROPIC_API_KEY`：模型服务 API Key。
 - `ANTHROPIC_BASE_URL`：兼容 Anthropic API 的服务地址。
 - `ANTHROPIC_MODEL`：默认主模型名称。
@@ -136,7 +136,7 @@ ANTHROPIC_MODEL=your_model_name
 - `FEISHU_APP_ID` / `FEISHU_APP_SECRET`：飞书自建应用的凭据，仅启动飞书机器人通道时需要。
 - `FEISHU_ALLOWED_OPEN_IDS` / `FEISHU_ALLOWED_CHAT_IDS`：飞书通道白名单，逗号分隔；两个都为空时允许所有飞书用户/会话，正式使用建议至少配置一项。
 - `FEISHU_REPLY_PROCESSING_MESSAGE`：飞书通道收到消息后是否先回复“正在处理”，`1` 开启，`0` 关闭。
-- `SHOW_TOOL_TRACE`：是否把工具调用过程发送到 Telegram，`1` 开启，`0` 关闭。
+- `SHOW_TOOL_TRACE`：是否在支持的消息通道中显示工具调用过程，`1` 开启，`0` 关闭。
 - `SCHEDULER_INTERVAL_SECONDS`：定时任务轮询间隔，默认 `30` 秒。
 
 `.env.example` 为了避免暴露本机路径，示例里使用的是相对路径。相对路径会按启动程序时的当前目录解析；推荐始终在项目根目录运行 `hiclaw` 或 `hiclaw-tui`。如果你需要从任意目录启动，也可以在自己的 `.env` 中使用本机绝对路径，真实 `.env` 不会提交到 GitHub。
@@ -185,7 +185,7 @@ OPENAI_IMAGE_OUTPUT_FORMAT=png
 OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS=0
 ```
 
-第一版 OpenAI Provider 支持普通文本、图片理解和图片生成/编辑。文字聊天默认走 `OPENAI_BASE_URL`，图片生成/编辑可以单独配置 `OPENAI_IMAGE_BASE_URL`、`OPENAI_IMAGE_API_KEY` 和图片接口路径；不配置图片专用项时，会复用文本 OpenAI 配置和标准 Images API 路径。部分中转服务不接受 `quality`、`output_format`、`response_format` 等可选字段，可以保持 `OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS=0` 只发送最小参数。向 Telegram 发送图片并附带“生成图片、改图、编辑图片”等说明时，会把返回图片直接以内存 bytes 发回 Telegram，不写入本地文件。Claude Code 内置工具、MCP 工具、文件读写、Bash、WebSearch 等复杂 Agent 能力仍建议使用 `AGENT_PROVIDER=claude`。
+第一版 OpenAI Provider 支持普通文本、图片理解和图片生成/编辑。文字聊天默认走 `OPENAI_BASE_URL`，图片生成/编辑可以单独配置 `OPENAI_IMAGE_BASE_URL`、`OPENAI_IMAGE_API_KEY` 和图片接口路径；不配置图片专用项时，会复用文本 OpenAI 配置和标准 Images API 路径。部分中转服务不接受 `quality`、`output_format`、`response_format` 等可选字段，可以保持 `OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS=0` 只发送最小参数。图片生成或编辑结果会直接以内存 bytes 返回到支持的消息通道，不写入本地文件。Claude Code 内置工具、MCP 工具、文件读写、Bash、WebSearch 等复杂 Agent 能力仍建议使用 `AGENT_PROVIDER=claude`。
 
 ## 语音识别配置
 
@@ -324,7 +324,7 @@ python -m hiclaw.feishu_bot
 
 飞书通道会按会话隔离连续上下文：私聊使用 `feishu:p2p:{open_id}`，群聊使用 `feishu:chat:{chat_id}`，不会覆盖 Telegram 或 TUI 的会话。正式使用时建议配置 `FEISHU_ALLOWED_OPEN_IDS` 或 `FEISHU_ALLOWED_CHAT_IDS`，避免组织内其他用户误触发机器人。
 
-## Telegram 使用
+## 交互入口示例
 
 基础命令：
 
@@ -500,7 +500,7 @@ SCHEDULER_INTERVAL_SECONDS=30
 - 不要提交 `data/` 中的数据库和 session 文件。
 - 不要提交 `workspace/memory/` 中的记忆和对话记录。
 - 不要提交 `workspace/uploads/` 中的图片和语音。
-- 建议只给自己的 Telegram 用户 ID 配置 `OWNER_ID`。
+- 如果启用 Telegram，建议只给自己的 Telegram 用户 ID 配置 `OWNER_ID`。
 - 如果开放给多人使用，需要重新设计权限、配额、审计和数据隔离。
 
 ## 常见问题
@@ -513,7 +513,7 @@ SCHEDULER_INTERVAL_SECONDS=30
 
 `-e` 是 editable install，表示以可编辑模式安装当前项目。这样源码改动后不需要反复重新安装，适合开发阶段。
 
-### 为什么 Telegram 搜索工具失败，但 Bash 抓网页可以成功？
+### 为什么模型内搜索工具失败，但 Bash 抓网页可以成功？
 
 Claude Code 的 `WebSearch`、`WebFetch` 是否可用取决于当前模型服务和 Claude Code 运行环境；Bash 访问网络则取决于本机网络和命令行工具。两者不是同一条链路。
 
