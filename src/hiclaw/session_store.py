@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from garveyclaw.config import SESSION_FILE
+from hiclaw.config import SESSION_FILE
 
 
 def get_session_file(scope: str | None = None) -> Path:

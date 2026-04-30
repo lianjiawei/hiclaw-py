@@ -1,6 +1,6 @@
 from telegram import Update
 
-from garveyclaw.config import OWNER_ID
+from hiclaw.config import OWNER_ID
 
 
 def is_owner(update: Update) -> bool:

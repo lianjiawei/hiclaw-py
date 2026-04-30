@@ -1,9 +1,9 @@
-# GarveyClaw 项目记忆
+# HiClaw 项目记忆
 
 ## 当前项目状态
 
-- 正式运行入口是 `python -m garveyclaw`
-- 主包目录是 `src/garveyclaw`
+- 正式运行入口是 `python -m hiclaw`
+- 主包目录是 `src/hiclaw`
 - 当前正式工程已经拆成这些模块：
   - `app.py`
   - `config.py`
@@ -16,7 +16,7 @@
 
 ## 环境约定
 
-- 当前主要使用 Conda 环境：`garveyclaw`
+- 当前主要使用 Conda 环境：`hiclaw`
 - Python 路径示例：使用当前 Conda 环境里的 `python`，不要在文档中写入本机绝对路径
 - 现在不再使用项目里的 `.venv`
 

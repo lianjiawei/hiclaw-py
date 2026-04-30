@@ -1,5 +1,5 @@
 [project]
-name = "garveyclaw-py"
+name = "hiclaw-py"
 version = "0.1.0"
 description = "Personal AI Agent with Claude Code SDK and Telegram"
 requires-python = ">=3.12"
@@ -20,16 +20,16 @@ asr = [
 ]
 
 [project.scripts]
-garveyclaw = "garveyclaw.app:main"
-garveyclaw-tui = "garveyclaw.tui:main"
-garveyclaw-feishu = "garveyclaw.feishu_bot:main"
+hiclaw = "hiclaw.app:main"
+hiclaw-tui = "hiclaw.tui:main"
+hiclaw-feishu = "hiclaw.feishu_bot:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/garveyclaw"]
+packages = ["src/hiclaw"]
 
 [tool.ruff]
 line-length = 180

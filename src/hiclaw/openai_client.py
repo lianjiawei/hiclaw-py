@@ -8,9 +8,9 @@ from urllib.parse import urljoin
 
 import httpx
 
-from garveyclaw.agent_response import AgentImage, AgentReply
-from garveyclaw.claude_client import AGENT_LOCK, build_system_prompt
-from garveyclaw.config import (
+from hiclaw.agent_response import AgentImage, AgentReply
+from hiclaw.claude_client import AGENT_LOCK, build_system_prompt
+from hiclaw.config import (
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
     OPENAI_IMAGE_API_KEY,
@@ -25,7 +25,7 @@ from garveyclaw.config import (
     OPENAI_IMAGE_TIMEOUT_SECONDS,
     OPENAI_MODEL,
 )
-from garveyclaw.memory_store import append_conversation_record
+from hiclaw.memory_store import append_conversation_record
 
 logger = logging.getLogger(__name__)
 

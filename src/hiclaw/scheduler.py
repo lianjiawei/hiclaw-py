@@ -8,8 +8,8 @@ from typing import Any
 import aiosqlite
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from garveyclaw.agent_client import run_agent
-from garveyclaw.config import SCHEDULER_INTERVAL_SECONDS, TASK_DB_FILE
+from hiclaw.agent_client import run_agent
+from hiclaw.config import SCHEDULER_INTERVAL_SECONDS, TASK_DB_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -424,7 +424,7 @@ def setup_scheduler(bot) -> AsyncIOScheduler:
         "interval",
         seconds=SCHEDULER_INTERVAL_SECONDS,
         args=[bot],
-        id="garveyclaw_check_tasks",
+        id="hiclaw_check_tasks",
         replace_existing=True,
     )
     return scheduler

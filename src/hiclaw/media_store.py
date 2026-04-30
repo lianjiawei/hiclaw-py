@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from telegram import Message
 
-from garveyclaw.config import UPLOAD_VOICES_DIR
+from hiclaw.config import UPLOAD_VOICES_DIR
 
 
 @dataclass(slots=True)

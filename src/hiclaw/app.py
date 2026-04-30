@@ -5,13 +5,13 @@ import time
 
 from telegram.error import NetworkError, TelegramError, TimedOut
 
-from garveyclaw.config import (
+from hiclaw.config import (
     FEISHU_APP_ID,
     FEISHU_APP_SECRET,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_RESTART_DELAY_SECONDS,
 )
-from garveyclaw.telegram_bot import build_application, run_polling_options
+from hiclaw.telegram_bot import build_application, run_polling_options
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,8 @@ def _start_feishu_in_thread() -> None:
     import lark_oapi as lark
     from lark_oapi.api.im.v1 import P2ImMessageReceiveV1
 
-    from garveyclaw.config import FEISHU_APP_ID, FEISHU_APP_SECRET
-    from garveyclaw.feishu_bot import (
+    from hiclaw.config import FEISHU_APP_ID, FEISHU_APP_SECRET
+    from hiclaw.feishu_bot import (
         build_event_handler,
         build_feishu_client,
         handle_message,

@@ -14,9 +14,9 @@ from lark_oapi.api.im.v1 import (
     P2ImMessageReceiveV1,
 )
 
-from garveyclaw.agent_client import AgentServiceError, run_agent
-from garveyclaw.agent_response import AgentReply
-from garveyclaw.config import (
+from hiclaw.agent_client import AgentServiceError, run_agent
+from hiclaw.agent_response import AgentReply
+from hiclaw.config import (
     FEISHU_ALLOWED_CHAT_IDS,
     FEISHU_ALLOWED_OPEN_IDS,
     FEISHU_APP_ID,
@@ -24,7 +24,7 @@ from garveyclaw.config import (
     FEISHU_REPLY_PROCESSING_MESSAGE,
     FEISHU_SESSION_SCOPE_PREFIX,
 )
-from garveyclaw.media_store import PhotoPayload
+from hiclaw.media_store import PhotoPayload
 
 logger = logging.getLogger(__name__)
 

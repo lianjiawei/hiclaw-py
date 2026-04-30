@@ -4,7 +4,7 @@ from pathlib import Path
 import json
 import wave
 
-from garveyclaw.config import ASR_PROVIDER, VOSK_MODEL_DIR
+from hiclaw.config import ASR_PROVIDER, VOSK_MODEL_DIR
 
 
 class SpeechRecognitionError(Exception):

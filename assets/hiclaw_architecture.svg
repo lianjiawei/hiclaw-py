@@ -48,7 +48,7 @@
   <circle cx="1002" cy="650" r="128" fill="#fb7185" opacity="0.08"/>
   <circle cx="870" cy="120" r="62" fill="#f97316" opacity="0.08"/>
 
-  <text x="56" y="58" class="h1">GarveyClaw Py Architecture</text>
+  <text x="56" y="58" class="h1">HiClaw Py Architecture</text>
   <text x="58" y="83" class="sub">Telegram-first personal AI agent powered by Claude Agent SDK, tools, memory, schedules, skills, media, and local ASR.</text>
 
   <!-- Main request path -->

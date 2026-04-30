@@ -10,8 +10,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-SESSION_FILE = DATA_DIR / "garveyclaw_session.json"
-TASK_DB_FILE = DATA_DIR / "garveyclaw_tasks.db"
+SESSION_FILE = DATA_DIR / "hiclaw_session.json"
+TASK_DB_FILE = DATA_DIR / "hiclaw_tasks.db"
 
 SKILLS_DIR = PROJECT_ROOT / "skills"
 SKILLS_DIR.mkdir(parents=True, exist_ok=True)
@@ -92,9 +92,9 @@ ALLOWED_TOOLS = [
     "read_workspace_file",
     "send_message",
     "get_uploaded_image",
-    "mcp__garveyclaw__get_current_time",
-    "mcp__garveyclaw__list_workspace_files",
-    "mcp__garveyclaw__read_workspace_file",
-    "mcp__garveyclaw__send_message",
-    "mcp__garveyclaw__get_uploaded_image",
+    "mcp__hiclaw__get_current_time",
+    "mcp__hiclaw__list_workspace_files",
+    "mcp__hiclaw__read_workspace_file",
+    "mcp__hiclaw__send_message",
+    "mcp__hiclaw__get_uploaded_image",
 ]

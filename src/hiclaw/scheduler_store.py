@@ -1,6 +1,6 @@
 import aiosqlite
 
-from garveyclaw.config import TASK_DB_FILE
+from hiclaw.config import TASK_DB_FILE
 
 TASK_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS scheduled_tasks (
@@ -66,4 +66,3 @@ async def init_task_db() -> None:
             )
 
         await db.commit()
-

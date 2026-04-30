@@ -7,7 +7,7 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from garveyclaw.config import WORKSPACE_DIR
+from hiclaw.config import WORKSPACE_DIR
 
 
 def resolve_workspace_path(relative_path: str) -> Path:
@@ -132,7 +132,7 @@ def build_mcp_server(bot: Any, chat_id: int, uploaded_image: Any | None = None):
         tools.append(get_uploaded_image)
 
     return create_sdk_mcp_server(
-        name="garveyclaw-tools",
+        name="hiclaw-tools",
         version="1.0.0",
         tools=tools,
     )

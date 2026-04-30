@@ -44,8 +44,8 @@
 推荐命令：
 
 ```powershell
-conda create -n garveyclaw python=3.12 -y
-conda activate garveyclaw
+conda create -n hiclaw python=3.12 -y
+conda activate hiclaw
 ```
 
 ### 2.3 依赖安装
@@ -531,7 +531,7 @@ python claw_course_bot.py
 
 正式工程入口：
 
-- [src/garveyclaw/app.py](src/garveyclaw/app.py)
+- [src/hiclaw/app.py](src/hiclaw/app.py)
 
 课程版的作用是：
 
@@ -554,4 +554,4 @@ python claw_course_bot.py
 
 如果你要真正维护项目，再回到：
 
-- [src/garveyclaw](src/garveyclaw)
+- [src/hiclaw](src/hiclaw)

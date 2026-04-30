@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from garveyclaw.config import AGENT_PROVIDER
-from garveyclaw.agent_response import AgentReply
+from hiclaw.config import AGENT_PROVIDER
+from hiclaw.agent_response import AgentReply
 
 if TYPE_CHECKING:
     from telegram import Update
@@ -56,7 +56,7 @@ async def run_agent(
 
     try:
         if provider == "claude":
-            from garveyclaw.claude_client import run_agent as run_claude_agent
+            from hiclaw.claude_client import run_agent as run_claude_agent
 
             text = await run_claude_agent(
                 prompt=prompt,
@@ -70,7 +70,7 @@ async def run_agent(
             return AgentReply.from_text(text)
 
         if provider == "openai":
-            from garveyclaw.openai_client import run_openai_agent
+            from hiclaw.openai_client import run_openai_agent
 
             return await run_openai_agent(
                 prompt=prompt,

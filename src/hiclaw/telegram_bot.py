@@ -14,10 +14,10 @@ from telegram.ext import (
     filters,
 )
 
-from garveyclaw.access import is_owner
-from garveyclaw.agent_response import AgentReply
-from garveyclaw.agent_client import AgentServiceError, ask_agent
-from garveyclaw.config import (
+from hiclaw.access import is_owner
+from hiclaw.agent_response import AgentReply
+from hiclaw.agent_client import AgentServiceError, ask_agent
+from hiclaw.config import (
     TELEGRAM_BOOTSTRAP_RETRIES,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CONNECT_TIMEOUT,
@@ -26,9 +26,9 @@ from garveyclaw.config import (
     TELEGRAM_READ_TIMEOUT,
     TELEGRAM_WRITE_TIMEOUT,
 )
-from garveyclaw.media_store import load_photo_message, save_voice_message
-from garveyclaw.memory_store import append_long_term_memory, load_long_term_memory
-from garveyclaw.scheduler import (
+from hiclaw.media_store import load_photo_message, save_voice_message
+from hiclaw.memory_store import append_long_term_memory, load_long_term_memory
+from hiclaw.scheduler import (
     cancel_scheduled_task,
     create_scheduled_task,
     format_schedule_description,
@@ -36,11 +36,11 @@ from garveyclaw.scheduler import (
     parse_natural_schedule,
     setup_scheduler,
 )
-from garveyclaw.scheduler_store import init_task_db
-from garveyclaw.session_store import clear_session_id
-from garveyclaw.skill_store import get_skill, list_skills
-from garveyclaw.speech_client import SpeechRecognitionError, transcribe_voice
-from garveyclaw.telegram_formatting import format_telegram_text
+from hiclaw.scheduler_store import init_task_db
+from hiclaw.session_store import clear_session_id
+from hiclaw.skill_store import get_skill, list_skills
+from hiclaw.speech_client import SpeechRecognitionError, transcribe_voice
+from hiclaw.telegram_formatting import format_telegram_text
 
 logger = logging.getLogger(__name__)
 

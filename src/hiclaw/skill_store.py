@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from garveyclaw.config import SKILLS_DIR
+from hiclaw.config import SKILLS_DIR
 
 
 @dataclass(frozen=True)

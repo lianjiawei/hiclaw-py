@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from garveyclaw.config import CLAUDE_MEMORY_FILE, CONVERSATIONS_DIR, MEMORY_DIR, PROJECT_ROOT, WORKSPACE_DIR
+from hiclaw.config import CLAUDE_MEMORY_FILE, CONVERSATIONS_DIR, MEMORY_DIR, PROJECT_ROOT, WORKSPACE_DIR
 
 
 def ensure_memory_files() -> None:

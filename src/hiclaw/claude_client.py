@@ -13,8 +13,8 @@ from claude_agent_sdk import (
     query,
 )
 
-from garveyclaw.agent_tools import build_mcp_server
-from garveyclaw.config import (
+from hiclaw.agent_tools import build_mcp_server
+from hiclaw.config import (
     ALLOWED_TOOLS,
     ANTHROPIC_API_KEY,
     ANTHROPIC_BASE_URL,
@@ -23,9 +23,9 @@ from garveyclaw.config import (
     SHOW_TOOL_TRACE,
     WORKSPACE_DIR,
 )
-from garveyclaw.memory_store import append_conversation_record, load_long_term_memory
-from garveyclaw.session_store import load_session_id, save_session_id
-from garveyclaw.skill_store import build_skill_prompt
+from hiclaw.memory_store import append_conversation_record, load_long_term_memory
+from hiclaw.session_store import load_session_id, save_session_id
+from hiclaw.skill_store import build_skill_prompt
 
 if TYPE_CHECKING:
     from telegram import Update
@@ -96,6 +96,24 @@ def build_tool_hooks(bot, chat_id: int) -> dict[str, list[HookMatcher]]:
     }
 
 
+async def collect_agent_response(prompt: str, options: ClaudeAgentOptions) -> tuple[str, str | None]:
+    final_result = None
+    text_parts: list[str] = []
+    latest_session_id: str | None = None
+
+    async for message in query(prompt=prompt, options=options):
+        if getattr(message, "session_id", None):
+            latest_session_id = message.session_id
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    text_parts.append(block.text)
+        elif isinstance(message, ResultMessage) and message.result:
+            final_result = message.result
+
+    return (final_result or "\n".join(text_parts)).strip(), latest_session_id
+
+
 async def ask_claude(
     prompt: str,
     update: "Update",
@@ -128,47 +146,51 @@ async def run_agent(
 ) -> str:
     """运行一次 Claude Agent，并负责 session 与对话记录落盘。"""
 
-    env = {
-        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
-        "ANTHROPIC_BASE_URL": ANTHROPIC_BASE_URL,
-        "ANTHROPIC_MODEL": ANTHROPIC_MODEL,
-    }
-
     tool_server = build_mcp_server(bot=bot, chat_id=chat_id, uploaded_image=uploaded_image)
     saved_session_id = load_session_id(session_scope) if continue_session else None
     options = ClaudeAgentOptions(
         permission_mode="acceptEdits",
-        env=env,
+        env={
+            "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
+            "ANTHROPIC_BASE_URL": ANTHROPIC_BASE_URL,
+            "ANTHROPIC_MODEL": ANTHROPIC_MODEL,
+        },
         cwd=str(WORKSPACE_DIR),
         tools=CLAUDE_TOOLS_PRESET,
         system_prompt=build_system_prompt(prompt),
-        mcp_servers={"garveyclaw": tool_server},
+        mcp_servers={"hiclaw": tool_server},
         allowed_tools=ALLOWED_TOOLS,
         hooks=build_tool_hooks(bot, chat_id) if SHOW_TOOL_TRACE else {},
         continue_conversation=continue_session and bool(saved_session_id),
         resume=saved_session_id,
     )
 
-    final_result = None
-    text_parts: list[str] = []
-    latest_session_id: str | None = None
-
     try:
         async with AGENT_LOCK:
-            async for message in query(prompt=prompt, options=options):
-                if getattr(message, "session_id", None):
-                    latest_session_id = message.session_id
-                if isinstance(message, AssistantMessage):
-                    for block in message.content:
-                        if isinstance(block, TextBlock):
-                            text_parts.append(block.text)
-                elif isinstance(message, ResultMessage) and message.result:
-                    final_result = message.result
+            response, latest_session_id = await collect_agent_response(prompt, options)
+            if not response and saved_session_id:
+                logger.warning("Claude returned empty response while resuming session %s; retrying without resume.", saved_session_id)
+                retry_options = ClaudeAgentOptions(
+                    permission_mode="acceptEdits",
+                    env={
+                        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
+                        "ANTHROPIC_BASE_URL": ANTHROPIC_BASE_URL,
+                        "ANTHROPIC_MODEL": ANTHROPIC_MODEL,
+                    },
+                    cwd=str(WORKSPACE_DIR),
+                    tools=CLAUDE_TOOLS_PRESET,
+                    system_prompt=build_system_prompt(prompt),
+                    mcp_servers={"hiclaw": tool_server},
+                    allowed_tools=ALLOWED_TOOLS,
+                    hooks=build_tool_hooks(bot, chat_id) if SHOW_TOOL_TRACE else {},
+                    continue_conversation=False,
+                    resume=None,
+                )
+                response, latest_session_id = await collect_agent_response(prompt, retry_options)
     except Exception as exc:
         logger.exception("Claude request failed")
         raise ClaudeServiceError("Failed to get response from Claude service.") from exc
 
-    response = final_result or "\n".join(text_parts)
     if not response.strip():
         raise ClaudeServiceError("Claude service returned an empty response.")
 
