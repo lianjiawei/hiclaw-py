@@ -184,7 +184,101 @@ def build_meta_subtitle(*parts: str) -> str:
     return "  |  ".join(part.strip() for part in parts if part and part.strip())
 
 
+def format_command_suggestions(prefix: str, selected_index: int) -> list[str]:
+    matched = [command for command in COMMANDS if command.name.startswith(prefix)] if prefix else []
+    if prefix == "/":
+        matched = COMMANDS
+    if not matched:
+        return [color("  没有匹配的命令", "90")]
+    name_width = max(display_width(command.name) for command in matched)
+    selected_index = selected_index % len(matched)
+    lines: list[str] = []
+    for index, command in enumerate(matched):
+        marker = ">" if index == selected_index else " "
+        command_name = pad_display(command.name, name_width)
+        if index == selected_index:
+            lines.append(f"{color(marker, '33;1')} {color(command_name, '36;1')}  {command.description}")
+        else:
+            lines.append(f"{marker} {command_name}  {command.description}")
+    return lines
+
+
+def _read_prompt_windows() -> str:
+    import msvcrt
+
+    buffer: list[str] = []
+    selected_index = 0
+
+    def current_text() -> str:
+        return "".join(buffer)
+
+    def current_matches() -> list[CommandInfo]:
+        text = current_text()
+        if not text.startswith("/"):
+            return []
+        matched = [command for command in COMMANDS if command.name.startswith(text)]
+        if text == "/":
+            matched = COMMANDS
+        return matched
+
+    def render() -> None:
+        text = current_text()
+        suggestions = format_command_suggestions(text, selected_index) if text.startswith("/") else []
+        sys.stdout.write("\r\033[J")
+        sys.stdout.write(color(PROMPT, "36;1") + text)
+        if suggestions:
+            sys.stdout.write("\n" + "\n".join(suggestions))
+            sys.stdout.write(f"\033[{len(suggestions)}A")
+            sys.stdout.write("\r\033[2K" + color(PROMPT, "36;1") + text)
+        sys.stdout.flush()
+
+    sys.stdout.write(color(PROMPT, "36;1"))
+    sys.stdout.flush()
+
+    while True:
+        ch = msvcrt.getwch()
+        if ch in ("\r", "\n"):
+            matches = current_matches()
+            if matches and current_text().startswith("/"):
+                buffer[:] = list(matches[selected_index % len(matches)].name)
+            sys.stdout.write("\r\033[J")
+            sys.stdout.write(color(PROMPT, "36;1") + current_text() + "\n")
+            sys.stdout.flush()
+            return current_text()
+        if ch == "\x03":
+            raise KeyboardInterrupt
+        if ch == "\t":
+            matches = current_matches()
+            if matches:
+                buffer[:] = list(matches[selected_index % len(matches)].name)
+                selected_index = 0
+                render()
+            continue
+        if ch == "\x08":
+            if buffer:
+                buffer.pop()
+                selected_index = 0
+                render()
+            continue
+        if ch in ("\x00", "\xe0"):
+            key = msvcrt.getwch()
+            matches = current_matches()
+            if matches and key in ("H", "P"):
+                if key == "H":
+                    selected_index = (selected_index - 1) % len(matches)
+                else:
+                    selected_index = (selected_index + 1) % len(matches)
+                render()
+            continue
+        if ch.isprintable():
+            buffer.append(ch)
+            selected_index = 0
+            render()
+
+
 def read_prompt() -> str:
+    if os.name == "nt" and sys.stdin.isatty():
+        return _read_prompt_windows()
     return input(color(PROMPT, "36;1"))
 
 
