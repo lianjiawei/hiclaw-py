@@ -253,7 +253,13 @@ hiclaw
 启动成功后，终端会显示：
 
 ```text
-Bot is running...
+Starting channels: Telegram
+```
+
+如果同时配置了飞书，会显示类似：
+
+```text
+Starting channels: Telegram, Feishu
 ```
 
 本地开发时，按 `Ctrl + C` 可以停止机器人。
@@ -272,7 +278,7 @@ python -m hiclaw.tui
 hiclaw-tui
 ```
 
-第一版 TUI 复用 `AGENT_PROVIDER`、`WORKSPACE_DIR`、memory、skills 和 Agent 工具链；TUI 使用独立会话文件 `data/hiclaw_session_tui.json`，不会覆盖 Telegram 的连续会话。常用命令：
+TUI 复用 `AGENT_PROVIDER`、`WORKSPACE_DIR`、memory、skills 和 Agent 工具链；TUI 使用独立会话文件 `data/hiclaw_session_tui.json`，不会覆盖 Telegram 的连续会话。当前采用稳定的串行交互模式：单行输入按 `Enter` 直接发送，多行内容建议使用 `/paste`。常用命令：
 
 - `/help`：查看命令。
 - `/reset`：清空 TUI 独立连续会话。
@@ -284,7 +290,7 @@ hiclaw-tui
 
 ## 飞书机器人通道
 
-飞书第一版通道使用官方 `lark-oapi` SDK 的长连接模式接收事件，不需要本地暴露公网 Webhook 地址。当前先支持文本消息收发，图片理解和图片生成返回会在后续版本补齐。
+飞书通道使用官方 `lark-oapi` SDK 的长连接模式接收事件，不需要本地暴露公网 Webhook 地址。当前支持文本消息和图片输入理解；图片结果回传仍有限制，复杂图片输出建议优先在 Telegram 或 TUI 通道查看。
 
 启动前需要在飞书开放平台完成这些配置：
 
@@ -344,7 +350,7 @@ python -m hiclaw.feishu_bot
 
 图片和语音：
 
-- 发送图片时，机器人会保存图片并把图片路径交给 Agent 处理。
+- 发送图片时，机器人会把图片内容以内存 bytes 交给 Agent 处理，不依赖本地图片路径。
 - 发送语音时，如果开启 ASR，机器人会先转写语音，再把转写文本交给 Agent 处理。
 
 ## 项目结构
