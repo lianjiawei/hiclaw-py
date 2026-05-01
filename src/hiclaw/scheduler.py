@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from hiclaw.agent_client import run_agent
 from hiclaw.config import SCHEDULER_INTERVAL_SECONDS, TASK_DB_FILE
-from hiclaw.memory_store import archive_old_memories, auto_promote_candidates, meditate_and_organize_memories
+from hiclaw.memory_store import archive_old_memories, auto_promote_candidates, clean_old_conversations, meditate_and_organize_memories
 
 logger = logging.getLogger(__name__)
 
@@ -250,13 +250,15 @@ async def create_scheduled_task(
     run_at: datetime,
     schedule_type: str = "once",
     schedule_value: str | None = None,
+    session_scope: str | None = None,
+    continue_session: bool = False,
 ) -> str:
     task_id = uuid.uuid4().hex[:8]
     async with aiosqlite.connect(TASK_DB_FILE) as db:
         await db.execute(
             """
-            INSERT INTO scheduled_tasks (id, chat_id, prompt, schedule_type, schedule_value, next_run, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO scheduled_tasks (id, chat_id, prompt, schedule_type, schedule_value, session_scope, continue_session, next_run, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id,
@@ -264,6 +266,8 @@ async def create_scheduled_task(
                 prompt,
                 schedule_type,
                 schedule_value,
+                session_scope,
+                1 if continue_session else 0,
                 run_at.astimezone(timezone.utc).isoformat(),
                 datetime.now(timezone.utc).isoformat(),
             ),
@@ -277,7 +281,7 @@ async def list_scheduled_tasks() -> list[dict[str, Any]]:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """
-            SELECT id, chat_id, prompt, schedule_type, schedule_value, next_run, status, created_at
+            SELECT id, chat_id, prompt, schedule_type, schedule_value, session_scope, continue_session, next_run, status, created_at
             FROM scheduled_tasks
             WHERE status = 'active'
             ORDER BY next_run ASC
@@ -388,6 +392,8 @@ async def execute_scheduled_task(task: dict[str, Any], bot) -> None:
     task_id = task["id"]
     chat_id = task["chat_id"]
     prompt = task["prompt"]
+    session_scope = task.get("session_scope")
+    continue_session = bool(task.get("continue_session", False))
 
     wrapped_prompt = (
         "你正在执行一条定时任务。"
@@ -400,7 +406,8 @@ async def execute_scheduled_task(task: dict[str, Any], bot) -> None:
             prompt=wrapped_prompt,
             bot=bot,
             chat_id=chat_id,
-            continue_session=False,
+            continue_session=continue_session,
+            session_scope=session_scope,
         )
         await bot.send_message(chat_id=chat_id, text=f"⏰ 定时任务执行结果：\n{result.text}")
         next_run, next_status = compute_next_run_after_execution(task)
@@ -443,6 +450,15 @@ async def run_memory_meditation() -> None:
         logger.exception("Memory meditation failed")
 
 
+async def run_conversation_cleanup() -> None:
+    try:
+        cleaned = clean_old_conversations()
+        if cleaned:
+            logger.info("Cleaned %d old conversation log file(s)", len(cleaned))
+    except Exception:
+        logger.exception("Conversation cleanup failed")
+
+
 def setup_scheduler(bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
@@ -466,6 +482,14 @@ def setup_scheduler(bot) -> AsyncIOScheduler:
         hour=2,
         minute=0,
         id="hiclaw_memory_meditation",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_conversation_cleanup,
+        "cron",
+        hour=3,
+        minute=0,
+        id="hiclaw_conversation_cleanup",
         replace_existing=True,
     )
     return scheduler

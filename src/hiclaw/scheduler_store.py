@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     prompt TEXT NOT NULL,
     schedule_type TEXT NOT NULL DEFAULT 'once',
     schedule_value TEXT,
+    session_scope TEXT,
+    continue_session INTEGER NOT NULL DEFAULT 0,
     next_run TEXT,
     status TEXT NOT NULL DEFAULT 'active',
     created_at TEXT NOT NULL,
@@ -35,6 +37,10 @@ async def init_task_db() -> None:
             )
         if "schedule_value" not in columns:
             await db.execute("ALTER TABLE scheduled_tasks ADD COLUMN schedule_value TEXT")
+        if "session_scope" not in columns:
+            await db.execute("ALTER TABLE scheduled_tasks ADD COLUMN session_scope TEXT")
+        if "continue_session" not in columns:
+            await db.execute("ALTER TABLE scheduled_tasks ADD COLUMN continue_session INTEGER NOT NULL DEFAULT 0")
 
         next_run_info = next((row for row in table_info if row[1] == "next_run"), None)
         if next_run_info is not None and next_run_info[3] == 1:
@@ -46,6 +52,8 @@ async def init_task_db() -> None:
                     prompt TEXT NOT NULL,
                     schedule_type TEXT NOT NULL DEFAULT 'once',
                     schedule_value TEXT,
+                    session_scope TEXT,
+                    continue_session INTEGER NOT NULL DEFAULT 0,
                     next_run TEXT,
                     status TEXT NOT NULL DEFAULT 'active',
                     created_at TEXT NOT NULL,

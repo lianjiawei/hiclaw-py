@@ -12,6 +12,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 SESSION_FILE = DATA_DIR / "hiclaw_session.json"
 TASK_DB_FILE = DATA_DIR / "hiclaw_tasks.db"
+SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "86400"))
 
 SKILLS_DIR = PROJECT_ROOT / "skills"
 SKILLS_DIR.mkdir(parents=True, exist_ok=True)
@@ -42,6 +43,7 @@ SESSION_SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
 
 MEMORY_CANDIDATE_AUTO_PROMOTE_SECONDS = int(os.getenv("MEMORY_CANDIDATE_AUTO_PROMOTE_SECONDS", "86400"))
 MEMORY_ARCHIVE_AFTER_DAYS = int(os.getenv("MEMORY_ARCHIVE_AFTER_DAYS", "30"))
+CONVERSATION_RETENTION_DAYS = int(os.getenv("CONVERSATION_RETENTION_DAYS", "30"))
 
 SCHEDULER_INTERVAL_SECONDS = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "30"))
 SHOW_TOOL_TRACE = os.getenv("SHOW_TOOL_TRACE", "0") == "1"

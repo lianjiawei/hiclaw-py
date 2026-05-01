@@ -25,7 +25,7 @@ from hiclaw.config import (
     OPENAI_IMAGE_TIMEOUT_SECONDS,
     OPENAI_MODEL,
 )
-from hiclaw.memory_store import append_conversation_record
+from hiclaw.memory_store import append_conversation_record, build_context_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -164,11 +164,15 @@ def build_openai_input(prompt: str, uploaded_image: Any | None) -> list[dict[str
     return [{"role": "user", "content": content}]
 
 
-def build_openai_instructions(prompt: str) -> str:
+def build_openai_instructions(prompt: str, session_scope: str | None = None) -> str:
     """复用项目记忆和 skill 上下文，并声明 OpenAI 第一版不接 Claude Code 工具。"""
+
+    context = build_context_snapshot(session_scope)
+    context_block = f"\n\n--- 当前上下文 ---\n\n{context}" if context else ""
 
     return (
         build_system_prompt(prompt)
+        + context_block
         + "\n\n当前使用的是 OpenAI Provider 第一版。"
         + "本模式支持文本、图片理解和图片生成/编辑，但不直接提供 Claude Code 内置工具、MCP 工具、"
         + "文件读写、Bash、WebSearch 或主动发送 Telegram 消息工具。"
@@ -336,6 +340,7 @@ async def run_openai_agent(
     continue_session: bool,
     record_text: str | None = None,
     uploaded_image: Any | None = None,
+    session_scope: str | None = None,
 ) -> AgentReply:
     """第一版 OpenAI Provider：支持文本、图片理解和图片生成/编辑。"""
 
@@ -349,7 +354,7 @@ async def run_openai_agent(
         async with AGENT_LOCK:
             response = await client.responses.create(
                 model=OPENAI_MODEL,
-                instructions=build_openai_instructions(prompt),
+                instructions=build_openai_instructions(prompt, session_scope),
                 input=request_input,
             )
     except Exception:
@@ -360,5 +365,5 @@ async def run_openai_agent(
     if not text.strip():
         raise RuntimeError("OpenAI service returned an empty response.")
 
-    append_conversation_record(record_text or prompt, text, None if not continue_session else "openai")
+    append_conversation_record(record_text or prompt, text, None if not continue_session else "openai", session_scope)
     return AgentReply.from_text(text)

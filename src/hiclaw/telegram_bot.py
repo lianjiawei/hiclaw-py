@@ -46,7 +46,7 @@ from hiclaw.scheduler import (
     setup_scheduler,
 )
 from hiclaw.scheduler_store import init_task_db
-from hiclaw.session_store import clear_session_id
+from hiclaw.session_store import clear_session_id, init_session_db
 from hiclaw.skill_store import get_skill, list_skills
 from hiclaw.speech_client import SpeechRecognitionError, transcribe_voice
 from hiclaw.telegram_formatting import format_telegram_text
@@ -120,6 +120,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 run_at=natural_schedule.run_at,
                 schedule_type=natural_schedule.schedule_type,
                 schedule_value=natural_schedule.schedule_value,
+                session_scope=TELEGRAM_SESSION_SCOPE,
             )
             local_time = natural_schedule.run_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
             await reply_plain_text(
@@ -479,9 +480,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def post_init(application: Application) -> None:
-    """启动时初始化定时任务数据库并拉起调度器。"""
+    """启动时初始化数据库并拉起调度器。"""
 
     await init_task_db()
+    await init_session_db()
     scheduler = setup_scheduler(application.bot)
     scheduler.start()
     application.bot_data["scheduler"] = scheduler

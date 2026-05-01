@@ -18,10 +18,13 @@ HiClaw Py 是一个支持多通道交互和双 Provider 路由的个人智能体
 - 连续会话，通过本地 `session_id` 维持上下文。
 - 分层记忆能力，包含长期记忆、工作记忆、会话摘要、对话归档和拟人化记忆机制。
 - 拟人化记忆系统：频率加权、智能提升、夜间冥想整理、自动归档。
-- 定时任务，支持一次性、每天、每周任务。
-- 自然语言创建定时提醒，例如“30秒后提醒我喝水”。
+- 定时任务，支持一次性、每天、每周任务，支持 session 上下文延续。
+- 自然语言创建定时提醒，例如"30秒后提醒我喝水"。
 - Skill 能力，目前包含表格数据分析与校验 Skill。
 - 可选本地 ASR，使用 `ffmpeg` + Vosk 处理语音消息。
+- 会话管理优化：文件锁并发保护、超时自动清除、SQLite 统一管理。
+- 工作记忆大小控制：字段字符上限、对话日志自动清理。
+- 记忆合并优化：混合相似度算法（关键词 + n-gram），预过滤提升性能。
 
 ## 项目架构
 
@@ -139,6 +142,8 @@ ANTHROPIC_MODEL=your_model_name
 - `FEISHU_REPLY_PROCESSING_MESSAGE`：飞书通道收到消息后是否先回复“正在处理”，`1` 开启，`0` 关闭。
 - `SHOW_TOOL_TRACE`：是否在支持的消息通道中显示工具调用过程，`1` 开启，`0` 关闭。
 - `SCHEDULER_INTERVAL_SECONDS`：定时任务轮询间隔，默认 `30` 秒。
+- `SESSION_TIMEOUT_SECONDS`：会话超时时间，默认 `86400` 秒（24 小时）。
+- `CONVERSATION_RETENTION_DAYS`：对话日志保留天数，默认 `30` 天。
 
 `.env.example` 为了避免暴露本机路径，示例里使用的是相对路径。相对路径会按启动程序时的当前目录解析；推荐始终在项目根目录运行 `hiclaw` 或 `hiclaw-tui`。如果你需要从任意目录启动，也可以在自己的 `.env` 中使用本机绝对路径，真实 `.env` 不会提交到 GitHub。
 
@@ -429,10 +434,10 @@ hiclaw-py/
 - `agent_tools.py`：自定义 MCP 工具。
 - `media_store.py`：处理图片和语音上传数据。
 - `speech_client.py`：语音识别抽象层，目前支持 Vosk。
-- `memory_store.py`：分层记忆、工作记忆、会话摘要、候选记忆治理、对话记录、自动提升、冥想整理和归档。
-- `session_store.py`：连续会话 `session_id` 读写。
-- `scheduler.py`：定时任务解析、创建、执行和管理。
-- `scheduler_store.py`：定时任务 SQLite 表初始化和读写。
+- `memory_store.py`：分层记忆、工作记忆、会话摘要、候选记忆治理、对话记录、自动提升、冥想整理、归档和对话日志清理。
+- `session_store.py`：连续会话 `session_id` 读写，支持文件锁并发保护、超时自动清除、SQLite 异步 API。
+- `scheduler.py`：定时任务解析、创建、执行和管理，支持 session 上下文延续。
+- `scheduler_store.py`：定时任务 SQLite 表初始化和读写，支持 session_scope 和 continue_session 字段。
 - `skill_store.py`：Skill 加载和查询。
 - `telegram_formatting.py`：把常见 Markdown 转成 Telegram 可渲染 HTML。
 - `agent_response.py`：统一文本/图片回复结果结构。
@@ -522,10 +527,11 @@ workspace/
 
 每天凌晨 2:00 自动执行记忆整理：
 
-1. **合并相似记忆**：相似度 >60% 的条目自动合并。
-2. **重要性评分**：根据频率和关键词强度打分。
-3. **清理低价值记忆**：评分过低且记忆过多时自动清理。
-4. **生成整理报告**：记录合并/清理的操作日志。
+1. **合并相似记忆**：使用混合相似度算法（关键词 60% + 字符 n-gram 40%），相似度 >60% 的条目自动合并。
+2. **预过滤优化**：先通过关键词快速筛选（30% 重叠阈值），再进行精确相似度计算，大幅提升性能。
+3. **重要性评分**：根据频率和关键词强度打分。
+4. **清理低价值记忆**：评分过低且记忆过多时自动清理。
+5. **生成整理报告**：记录合并/清理的操作日志。
 
 ### 自动归档
 
@@ -595,6 +601,58 @@ data/hiclaw_tasks.db
 SCHEDULER_INTERVAL_SECONDS=30
 ```
 
+### 定时任务 Session 延续
+
+定时任务现在支持可选的 session 上下文延续：
+
+- `session_scope`：任务关联的会话通道（如 `telegram`、`tui`）。
+- `continue_session`：是否延续之前的对话上下文（默认 `false`）。
+
+创建支持 session 延续的定时任务示例：
+
+```python
+await create_scheduled_task(
+    chat_id=chat_id,
+    prompt="继续昨天的数据分析",
+    run_at=run_at,
+    session_scope="telegram",
+    continue_session=True,
+)
+```
+
+## 会话管理优化
+
+### 并发保护
+
+- Session 文件读写使用跨平台文件锁（Windows `msvcrt` / Linux `fcntl`）。
+- 原子写入机制（临时文件 + `os.replace`），防止并发写入损坏。
+
+### 超时自动清除
+
+- Session 文件超过 `SESSION_TIMEOUT_SECONDS`（默认 24 小时）未更新时，自动清除。
+- 避免恢复过期的 Claude session 导致 SDK 错误。
+
+### SQLite 统一管理
+
+- Session 数据现在同时支持文件存储和 SQLite 存储（异步 API）。
+- 新增异步 API：`load_session_id_async()`、`save_session_id_async()`、`clear_session_id_async()`。
+- 启动时自动初始化 session 数据库。
+
+### 工作记忆大小控制
+
+- 工作记忆字段添加字符上限：`active_goal`（200 字符）、`recent_decisions`（300 字符）、`open_questions`（200 字符）。
+- 防止 `working_state.json` 文件膨胀，控制内存占用。
+
+### 对话日志自动清理
+
+- 每天凌晨 3:00 自动清理超过 `CONVERSATION_RETENTION_DAYS`（默认 30 天）的对话日志。
+- 控制 `conversations/` 目录磁盘占用。
+
+## 飞书通道增强
+
+- 新增 `/reset` 命令，与 Telegram / TUI 保持一致的 session 重置能力。
+- `SEEN_MESSAGE_IDS` 改用 `deque(maxlen=1000)`，消除突然清空导致的重复处理窗口。
+
 ## 安全说明
 
 - 不要提交 `.env`。
@@ -638,6 +696,18 @@ python -m compileall src/hiclaw
 
 ```powershell
 python tests/test_memory_system.py
+```
+
+会话优化测试：
+
+```powershell
+python tests/test_session_optimization.py
+```
+
+P2 & P3 优化测试：
+
+```powershell
+python tests/test_p2_p3_optimization.py
 ```
 
 检查文本编码，避免中文注释或 `.env` 配置说明被 Windows 终端写成问号乱码：

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from hiclaw.config import (
     CLAUDE_MEMORY_FILE,
     CONVERSATIONS_DIR,
+    CONVERSATION_RETENTION_DAYS,
     LONG_TERM_MEMORY_DIR,
     MEMORY_ARCHIVE_DIR,
     MEMORY_ARCHIVE_AFTER_DAYS,
@@ -355,6 +356,16 @@ def save_working_state(state: dict[str, Any], scope: str | None = None) -> None:
     get_working_state_file(scope).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _compact_text(text: str, max_length: int) -> str:
+    """截断文本到指定长度，避免工作记忆膨胀。"""
+    if not text:
+        return ""
+    cleaned = text.strip().replace("\n", " ")
+    if len(cleaned) > max_length:
+        return cleaned[:max_length - 3] + "..."
+    return cleaned
+
+
 def update_working_state_from_turn(user_message: str, assistant_reply: str, scope: str | None = None) -> dict[str, Any]:
     ensure_memory_files()
     state = load_working_state(scope)
@@ -367,15 +378,15 @@ def update_working_state_from_turn(user_message: str, assistant_reply: str, scop
 
     state["active_intent_type"] = intent_type
     if active_goal:
-        state["active_goal"] = active_goal
-    state["active_tasks"] = _append_unique_tail(list(state.get("active_tasks") or []), active_goal, 5)
-    state["recent_decisions"] = _append_unique_tail(list(state.get("recent_decisions") or []), recent_decision, 8)
+        state["active_goal"] = _compact_text(active_goal, 200)
+    state["active_tasks"] = [_compact_text(t, 200) for t in _append_unique_tail(list(state.get("active_tasks") or []), active_goal, 5)]
+    state["recent_decisions"] = [_compact_text(d, 300) for d in _append_unique_tail(list(state.get("recent_decisions") or []), recent_decision, 8)]
 
     existing_questions = list(state.get("open_questions") or [])
     if open_question:
-        state["open_questions"] = _append_unique_tail(existing_questions, open_question, 5)
+        state["open_questions"] = [_compact_text(q, 200) for q in _append_unique_tail(existing_questions, open_question, 5)]
     else:
-        state["open_questions"] = existing_questions[-5:]
+        state["open_questions"] = [_compact_text(q, 200) for q in existing_questions[-5:]]
 
     merged_files = list(state.get("touched_files") or [])
     for touched in touched_files:
@@ -579,20 +590,39 @@ def _extract_memory_content(section: list[str]) -> str | None:
 
 
 def _calculate_section_similarity(section_a: list[str], section_b: list[str]) -> float:
+    """计算两个记忆片段的相似度，使用改进的关键词+字符n-gram混合相似度。"""
     content_a = _extract_memory_content(section_a)
     content_b = _extract_memory_content(section_b)
     if not content_a or not content_b:
         return 0.0
 
+    # 提取关键词
     keywords_a = set(KEYWORD_EXTRACTOR.findall(content_a.lower()))
     keywords_b = set(KEYWORD_EXTRACTOR.findall(content_b.lower()))
 
     if not keywords_a or not keywords_b:
         return 0.0
 
-    intersection = keywords_a & keywords_b
-    union = keywords_a | keywords_b
-    return len(intersection) / len(union) if union else 0.0
+    # 关键词 Jaccard 相似度
+    keyword_intersection = keywords_a & keywords_b
+    keyword_union = keywords_a | keywords_b
+    keyword_similarity = len(keyword_intersection) / len(keyword_union) if keyword_union else 0.0
+
+    # 字符 2-gram 相似度（对短文本更有效）
+    def char_bigrams(text: str) -> set[str]:
+        return {text[i:i+2] for i in range(len(text) - 1)}
+
+    bigrams_a = char_bigrams(content_a.lower())
+    bigrams_b = char_bigrams(content_b.lower())
+    if bigrams_a and bigrams_b:
+        bigram_intersection = bigrams_a & bigrams_b
+        bigram_union = bigrams_a | bigrams_b
+        bigram_similarity = len(bigram_intersection) / len(bigram_union) if bigram_union else 0.0
+    else:
+        bigram_similarity = 0.0
+
+    # 混合相似度：关键词权重 60%，n-gram 权重 40%
+    return 0.6 * keyword_similarity + 0.4 * bigram_similarity
 
 
 def meditate_and_organize_memories() -> dict[str, Any]:
@@ -622,6 +652,15 @@ def meditate_and_organize_memories() -> dict[str, Any]:
         if len(sections) <= 1:
             continue
 
+        # 预计算每个section的关键词集合，用于快速过滤
+        section_keywords: list[set[str]] = []
+        for section in sections:
+            content = _extract_memory_content(section)
+            if content:
+                section_keywords.append(set(KEYWORD_EXTRACTOR.findall(content.lower())))
+            else:
+                section_keywords.append(set())
+
         merged_sections: list[list[str]] = []
         used_indices: set[int] = set()
 
@@ -631,10 +670,22 @@ def meditate_and_organize_memories() -> dict[str, Any]:
 
             similar_sections = [section_a]
             used_indices.add(i)
+            keywords_a = section_keywords[i]
+            if not keywords_a:
+                continue
 
             for j, section_b in enumerate(sections):
                 if j in used_indices:
                     continue
+                keywords_b = section_keywords[j]
+                if not keywords_b:
+                    continue
+
+                # 快速预过滤：关键词交集至少要有 30% 重叠才进行精确计算
+                quick_overlap = len(keywords_a & keywords_b) / max(len(keywords_a | keywords_b), 1)
+                if quick_overlap < 0.3:
+                    continue
+
                 similarity = _calculate_section_similarity(section_a, section_b)
                 if similarity > 0.6:
                     similar_sections.append(section_b)
@@ -684,3 +735,24 @@ def meditate_and_organize_memories() -> dict[str, Any]:
     save_importance_state({"memory_scores": meditation_report["importance_scores"]})
 
     return meditation_report
+
+
+def clean_old_conversations() -> list[Path]:
+    """清理超过保留天数的对话日志文件。"""
+    cleaned: list[Path] = []
+    now = datetime.now()
+    cutoff = now - timedelta(days=CONVERSATION_RETENTION_DAYS)
+
+    for log_file in sorted(CONVERSATIONS_DIR.glob("*.jsonl")):
+        try:
+            date_match = re.match(r"^(\d{4}-\d{2}-\d{2})\.jsonl$", log_file.name)
+            if not date_match:
+                continue
+            file_date = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+            if file_date < cutoff:
+                log_file.unlink()
+                cleaned.append(log_file)
+        except (ValueError, OSError):
+            continue
+
+    return cleaned

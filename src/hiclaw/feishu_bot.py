@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +29,7 @@ from hiclaw.config import (
 from hiclaw.media_store import PhotoPayload
 from hiclaw.memory_intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
 from hiclaw.memory_store import append_memory_candidate, append_structured_long_term_memory
+from hiclaw.session_store import clear_session_id
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ def parse_csv_set(value: str) -> set[str]:
 
 ALLOWED_OPEN_IDS = parse_csv_set(FEISHU_ALLOWED_OPEN_IDS)
 ALLOWED_CHAT_IDS = parse_csv_set(FEISHU_ALLOWED_CHAT_IDS)
-SEEN_MESSAGE_IDS: set[str] = set()
+SEEN_MESSAGE_IDS: deque[str] = deque(maxlen=1000)
 
 # 飞书交互式卡片消息使用 lark_md 标签，原生支持 Markdown 渲染。
 
@@ -90,9 +92,7 @@ def is_duplicate(message_id: str) -> bool:
         return False
     if message_id in SEEN_MESSAGE_IDS:
         return True
-    SEEN_MESSAGE_IDS.add(message_id)
-    if len(SEEN_MESSAGE_IDS) > 1000:
-        SEEN_MESSAGE_IDS.clear()
+    SEEN_MESSAGE_IDS.append(message_id)
     return False
 
 
@@ -218,6 +218,11 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
 
     if not is_allowed_message(incoming):
         logger.info("Skip unauthorized Feishu message: sender=%s chat=%s", incoming.sender_open_id, incoming.chat_id)
+        return
+
+    if incoming.text.strip().lower() == "/reset":
+        clear_session_id(build_session_scope(incoming))
+        await send_text_message(client, incoming.chat_id, "当前会话已清空，下一条消息会开启新会话。")
         return
 
     if FEISHU_REPLY_PROCESSING_MESSAGE:
