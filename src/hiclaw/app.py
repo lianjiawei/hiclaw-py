@@ -26,7 +26,7 @@ def main() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("telegram").setLevel(logging.WARNING)
-    logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+    logging.getLogger("telegram.ext").setLevel(logging.CRITICAL)
     logging.getLogger("telegram.ext._utils.networkloop").setLevel(logging.CRITICAL)
     logging.getLogger("telegram.ext._updater").setLevel(logging.CRITICAL)
 
@@ -48,12 +48,15 @@ def main() -> None:
 
     background_threads = []
     foreground_runner = None
-    if available_channels:
-        foreground_runner = available_channels[0].start()
-    for channel in available_channels[1:]:
+    for channel in available_channels:
         starter = channel.start()
         if starter is not None:
-            background_threads.append(start_background_channel(channel.name, starter))
+            if channel.run_in_background:
+                background_threads.append(start_background_channel(channel.name, starter))
+            elif foreground_runner is None:
+                foreground_runner = starter
+            else:
+                background_threads.append(start_background_channel(channel.name, starter))
 
     if background_threads:
         time.sleep(2)
@@ -62,9 +65,11 @@ def main() -> None:
         if foreground_runner is not None:
             foreground_runner.start()
         elif background_threads:
-            print("Telegram not configured. Waiting for Feishu...")
+            print("No foreground channel configured. Waiting for background channels...")
             try:
-                background_threads[0].join()
+                while any(thread.is_alive() for thread in background_threads):
+                    for thread in background_threads:
+                        thread.join(timeout=0.5)
             except KeyboardInterrupt:
                 print("Bot stopped.")
     finally:

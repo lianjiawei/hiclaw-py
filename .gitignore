@@ -28,6 +28,7 @@ workspace_course/
 
 # Local test scripts
 tests/
+test/
 
 # Local models can be large and machine-specific
 models/

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
 import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
 from telegram import Bot
-from telegram.error import NetworkError, TelegramError, TimedOut
+from telegram.error import InvalidToken, NetworkError, TelegramError, TimedOut
 
 from hiclaw.config import (
     FEISHU_APP_ID,
@@ -22,6 +24,16 @@ from hiclaw.telegram_bot import TelegramMessageSender, build_application, run_po
 logger = logging.getLogger(__name__)
 
 
+def _print_channel_config_error(channel_name: str, summary: str, fix_hint: str) -> None:
+    print(f"[{channel_name}] {summary}")
+    print(f"[{channel_name}] {fix_hint}")
+
+
+def _is_feishu_config_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(keyword in message for keyword in ["app_id", "app secret", "app_secret", "tenant_access_token", "permission", "auth", "credential"])
+
+
 class ChannelStarter(Protocol):
     def start(self) -> None: ...
 
@@ -33,16 +45,27 @@ class ChannelRegistration:
     enabled: Callable[[], bool]
     register_sender: Callable[[DeliveryRouter], None]
     start: Callable[[], ChannelStarter | None]
+    run_in_background: bool = False
 
 
 class TelegramChannelRunner:
     def start(self) -> None:
         while True:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
                 app = build_application()
-                app.run_polling(**run_polling_options())
+                app.run_polling(close_loop=False, **run_polling_options())
             except KeyboardInterrupt:
                 print("Bot stopped.")
+                break
+            except InvalidToken:
+                _print_channel_config_error(
+                    "Telegram",
+                    "Bot token is invalid or has expired. Telegram channel will stop now.",
+                    "Please update TELEGRAM_BOT_TOKEN in .env, or remove it if you only want to use hiclaw-tui / Feishu.",
+                )
+                logger.error("Telegram bot token was rejected by the server. Stopping Telegram runner until configuration is fixed.")
                 break
             except (TimedOut, NetworkError, TelegramError) as exc:
                 logger.warning(
@@ -57,25 +80,50 @@ class TelegramChannelRunner:
                     TELEGRAM_RESTART_DELAY_SECONDS,
                 )
                 time.sleep(TELEGRAM_RESTART_DELAY_SECONDS)
+            finally:
+                asyncio.set_event_loop(None)
+                if not loop.is_closed():
+                    loop.close()
 
 
 class FeishuChannelRunner:
-    def __init__(self, client) -> None:
-        self._client = client
-
     def start(self) -> None:
-        import lark_oapi as lark
+        try:
+            import lark_oapi as lark
 
-        event_handler = build_event_handler(self._client)
-        ws_client = lark.ws.Client(
-            app_id=FEISHU_APP_ID,
-            app_secret=FEISHU_APP_SECRET,
-            event_handler=event_handler,
-            log_level=lark.LogLevel.INFO,
-            auto_reconnect=True,
-        )
-        print("Feishu bot: WebSocket long connection started.")
-        ws_client.start()
+            lark_error_level = getattr(lark.LogLevel, "ERROR", getattr(lark.LogLevel, "INFO", 1))
+            lark_logger = getattr(lark, "logger", None)
+            if lark_logger is not None:
+                python_level = int(getattr(lark_error_level, "value", lark_error_level))
+                lark_logger.setLevel(python_level)
+
+            client = build_feishu_client()
+            event_handler = build_event_handler(client)
+            ws_client = lark.ws.Client(
+                app_id=FEISHU_APP_ID,
+                app_secret=FEISHU_APP_SECRET,
+                event_handler=event_handler,
+                log_level=lark_error_level,
+                auto_reconnect=True,
+            )
+            print("Feishu bot: WebSocket long connection started.")
+            ws_client.start()
+        except KeyboardInterrupt:
+            print("Bot stopped.")
+        except Exception as exc:
+            if _is_feishu_config_error(exc):
+                _print_channel_config_error(
+                    "Feishu",
+                    "App credentials are invalid or no longer accepted. Feishu channel will stop now.",
+                    "Please update FEISHU_APP_ID / FEISHU_APP_SECRET in .env, or remove them if you only want to use hiclaw-tui / Telegram.",
+                )
+            else:
+                _print_channel_config_error(
+                    "Feishu",
+                    "Channel startup failed and Feishu will stop now.",
+                    "Please check FEISHU_APP_ID / FEISHU_APP_SECRET, event subscription, and network connectivity.",
+                )
+            logger.error("Feishu runner stopped because startup failed: %s", exc)
 
 
 def _has_telegram_config() -> bool:
@@ -99,7 +147,7 @@ def _build_telegram_runner() -> ChannelStarter:
 
 
 def _build_feishu_runner() -> ChannelStarter:
-    return FeishuChannelRunner(build_feishu_client())
+    return FeishuChannelRunner()
 
 
 def get_registered_channels() -> list[ChannelRegistration]:
@@ -110,6 +158,7 @@ def get_registered_channels() -> list[ChannelRegistration]:
             enabled=_has_telegram_config,
             register_sender=_register_telegram_sender,
             start=_build_telegram_runner,
+            run_in_background=False,
         ),
         ChannelRegistration(
             name="Feishu",
@@ -117,6 +166,7 @@ def get_registered_channels() -> list[ChannelRegistration]:
             enabled=_has_feishu_config,
             register_sender=_register_feishu_sender,
             start=_build_feishu_runner,
+            run_in_background=True,
         ),
     ]
 
