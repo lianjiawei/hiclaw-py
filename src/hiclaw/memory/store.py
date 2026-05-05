@@ -21,7 +21,7 @@ from hiclaw.config import (
     WORKING_STATE_FILE,
     WORKSPACE_DIR,
 )
-from hiclaw.memory_frequency import (
+from hiclaw.memory.frequency import (
     calculate_memory_importance,
     get_high_frequency_topics,
     load_frequency_state,

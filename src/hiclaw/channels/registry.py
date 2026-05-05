@@ -17,9 +17,9 @@ from hiclaw.config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_RESTART_DELAY_SECONDS,
 )
-from hiclaw.delivery import DeliveryRouter
-from hiclaw.feishu_bot import FeishuBotAdapter, build_event_handler, build_feishu_client
-from hiclaw.telegram_bot import TelegramMessageSender, build_application, run_polling_options
+from hiclaw.core.delivery import DeliveryRouter
+from hiclaw.channels.feishu.bot import FeishuBotAdapter, build_event_handler, build_feishu_client
+from hiclaw.channels.telegram.bot import TelegramMessageSender, build_application, run_polling_options
 
 logger = logging.getLogger(__name__)
 

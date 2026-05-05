@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from hiclaw.runtime_types import ConversationRef
-from hiclaw.scheduler import (
+from hiclaw.core.types import ConversationRef
+from hiclaw.tasks.scheduler import (
     format_schedule_description,
     parse_natural_schedule,
 )
-from hiclaw.task_repository import (
+from hiclaw.tasks.repository import (
     cancel_scheduled_task_record,
     create_scheduled_task_record,
     list_scheduled_task_records,

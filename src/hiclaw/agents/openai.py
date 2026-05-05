@@ -8,8 +8,8 @@ from urllib.parse import urljoin
 
 import httpx
 
-from hiclaw.agent_response import AgentImage, AgentReply
-from hiclaw.claude_client import build_system_prompt
+from hiclaw.core.response import AgentImage, AgentReply
+from hiclaw.agents.claude import build_system_prompt
 from hiclaw.config import (
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
@@ -25,9 +25,9 @@ from hiclaw.config import (
     OPENAI_IMAGE_TIMEOUT_SECONDS,
     OPENAI_MODEL,
 )
-from hiclaw.delivery import MessageSender
-from hiclaw.memory_store import append_conversation_record, build_context_snapshot
-from hiclaw.runtime_locks import acquire_runtime_lock
+from hiclaw.core.delivery import MessageSender
+from hiclaw.memory.store import append_conversation_record, build_context_snapshot
+from hiclaw.core.locks import acquire_runtime_lock
 
 logger = logging.getLogger(__name__)
 

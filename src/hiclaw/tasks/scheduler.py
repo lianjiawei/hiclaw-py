@@ -6,12 +6,12 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from hiclaw.agent_runtime import run_agent_for_conversation
+from hiclaw.agents.runtime import run_agent_for_conversation
 from hiclaw.config import SCHEDULER_INTERVAL_SECONDS
-from hiclaw.delivery import DeliveryRouter
-from hiclaw.memory_store import archive_old_memories, auto_promote_candidates, clean_old_conversations, meditate_and_organize_memories
-from hiclaw.runtime_types import ConversationRef
-from hiclaw.task_repository import claim_scheduled_task_record, list_due_task_record_ids, release_claimed_task_record, update_task_record_after_run
+from hiclaw.core.delivery import DeliveryRouter
+from hiclaw.memory.store import archive_old_memories, auto_promote_candidates, clean_old_conversations, meditate_and_organize_memories
+from hiclaw.core.types import ConversationRef
+from hiclaw.tasks.repository import claim_scheduled_task_record, list_due_task_record_ids, release_claimed_task_record, update_task_record_after_run
 
 logger = logging.getLogger(__name__)
 

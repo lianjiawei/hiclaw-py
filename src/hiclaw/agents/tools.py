@@ -10,7 +10,7 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from tavily import TavilyClient
 
 from hiclaw.config import TAVILY_API_KEY, TAVILY_MAX_RESULTS, TAVILY_SEARCH_DEPTH, WORKSPACE_DIR
-from hiclaw.delivery import MessageSender, send_sender_text
+from hiclaw.core.delivery import MessageSender, send_sender_text
 
 
 def resolve_workspace_path(relative_path: str) -> Path:

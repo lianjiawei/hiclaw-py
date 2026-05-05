@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from hiclaw.agent_client import run_agent
-from hiclaw.agent_response import AgentReply
-from hiclaw.delivery import MessageSender
-from hiclaw.runtime_types import ConversationRef
+from hiclaw.agents.router import run_agent
+from hiclaw.core.response import AgentReply
+from hiclaw.core.delivery import MessageSender
+from hiclaw.core.types import ConversationRef
 
 
 async def run_agent_for_conversation(

@@ -4,12 +4,12 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from hiclaw.config import AGENT_PROVIDER
-from hiclaw.delivery import MessageSender
-from hiclaw.agent_response import AgentReply
-from hiclaw.runtime_types import ConversationRef
+from hiclaw.core.delivery import MessageSender
+from hiclaw.core.response import AgentReply
+from hiclaw.core.types import ConversationRef
 
 if TYPE_CHECKING:
-    from hiclaw.feishu_bot import FeishuIncomingMessage
+    from hiclaw.channels.feishu.bot import FeishuIncomingMessage
     from telegram import Update
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ async def run_agent(
 
     try:
         if provider == "claude":
-            from hiclaw.claude_client import run_agent as run_claude_agent
+            from hiclaw.agents.claude import run_agent as run_claude_agent
 
             text = await run_claude_agent(
                 prompt=prompt,
@@ -86,7 +86,7 @@ async def run_agent(
             return AgentReply.from_text(text)
 
         if provider == "openai":
-            from hiclaw.openai_client import run_openai_agent
+            from hiclaw.agents.openai import run_openai_agent
 
             return await run_openai_agent(
                 prompt=prompt,

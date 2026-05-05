@@ -10,16 +10,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from hiclaw.agent_client import AgentServiceError, build_tui_conversation
-from hiclaw.agent_runtime import run_agent_for_conversation
-from hiclaw.agent_response import AgentReply
+from hiclaw.agents.router import AgentServiceError, build_tui_conversation
+from hiclaw.agents.runtime import run_agent_for_conversation
+from hiclaw.core.response import AgentReply
 from hiclaw.config import AGENT_PROVIDER, PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
-from hiclaw.delivery import DeliveryRouter
-from hiclaw.memory_intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
-from hiclaw.memory_store import append_memory_candidate, append_structured_long_term_memory
-from hiclaw.scheduler_runtime import start_background_scheduler, stop_background_scheduler
-from hiclaw.task_service import handle_task_command
-from hiclaw.session_store import clear_session_id, get_session_file
+from hiclaw.core.delivery import DeliveryRouter
+from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
+from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory
+from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
+from hiclaw.tasks.service import handle_task_command
+from hiclaw.memory.session import clear_session_id, get_session_file
 
 TUI_SESSION_SCOPE_PREFIX = "tui"
 TUI_INSTANCE_ID = os.getenv("HICLAW_TUI_INSTANCE_ID", f"pid{os.getpid()}_{uuid.uuid4().hex[:8]}")

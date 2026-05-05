@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from hiclaw.runtime_types import ConversationRef, build_conversation_key
+from hiclaw.core.types import ConversationRef, build_conversation_key
 
 logger = logging.getLogger(__name__)
 

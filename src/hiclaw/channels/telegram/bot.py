@@ -15,10 +15,10 @@ from telegram.ext import (
     filters,
 )
 
-from hiclaw.access import is_owner
-from hiclaw.agent_runtime import run_agent_for_conversation
-from hiclaw.agent_response import AgentReply
-from hiclaw.agent_client import AgentServiceError, build_telegram_conversation
+from hiclaw.channels.telegram.access import is_owner
+from hiclaw.agents.runtime import run_agent_for_conversation
+from hiclaw.core.response import AgentReply
+from hiclaw.agents.router import AgentServiceError, build_telegram_conversation
 from hiclaw.config import (
     TELEGRAM_BOOTSTRAP_RETRIES,
     TELEGRAM_BOT_TOKEN,
@@ -29,9 +29,9 @@ from hiclaw.config import (
     TELEGRAM_WRITE_TIMEOUT,
     SHOW_TOOL_TRACE,
 )
-from hiclaw.media_store import load_photo_message, save_voice_message
-from hiclaw.memory_intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
-from hiclaw.memory_store import (
+from hiclaw.media.store import load_photo_message, save_voice_message
+from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
+from hiclaw.memory.store import (
     accept_memory_candidate,
     append_memory_candidate,
     append_structured_long_term_memory,
@@ -39,11 +39,11 @@ from hiclaw.memory_store import (
     load_long_term_memory,
     reject_memory_candidate,
 )
-from hiclaw.task_service import handle_task_command
-from hiclaw.session_store import clear_session_id
-from hiclaw.skill_store import get_skill, list_skills
-from hiclaw.speech_client import SpeechRecognitionError, transcribe_voice
-from hiclaw.telegram_formatting import format_telegram_text
+from hiclaw.tasks.service import handle_task_command
+from hiclaw.memory.session import clear_session_id
+from hiclaw.skills.store import get_skill, list_skills
+from hiclaw.media.speech import SpeechRecognitionError, transcribe_voice
+from hiclaw.channels.telegram.formatting import format_telegram_text
 
 logger = logging.getLogger(__name__)
 

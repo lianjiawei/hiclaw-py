@@ -13,7 +13,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from hiclaw.agent_tools import build_mcp_server
+from hiclaw.agents.tools import build_mcp_server
 from hiclaw.config import (
     ALLOWED_TOOLS,
     ANTHROPIC_API_KEY,
@@ -23,11 +23,11 @@ from hiclaw.config import (
     SHOW_TOOL_TRACE,
     WORKSPACE_DIR,
 )
-from hiclaw.delivery import MessageSender, send_sender_text
-from hiclaw.memory_store import append_conversation_record, build_context_snapshot
-from hiclaw.runtime_locks import acquire_runtime_lock
-from hiclaw.session_store import load_session_id, save_session_id
-from hiclaw.skill_store import build_skill_prompt
+from hiclaw.core.delivery import MessageSender, send_sender_text
+from hiclaw.memory.store import append_conversation_record, build_context_snapshot
+from hiclaw.core.locks import acquire_runtime_lock
+from hiclaw.memory.session import load_session_id, save_session_id
+from hiclaw.skills.store import build_skill_prompt
 
 if TYPE_CHECKING:
     from telegram import Update

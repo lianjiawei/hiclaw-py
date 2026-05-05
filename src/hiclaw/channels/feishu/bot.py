@@ -16,9 +16,9 @@ from lark_oapi.api.im.v1 import (
     P2ImMessageReceiveV1,
 )
 
-from hiclaw.agent_client import AgentServiceError, build_feishu_conversation
-from hiclaw.agent_runtime import run_agent_for_conversation
-from hiclaw.agent_response import AgentReply
+from hiclaw.agents.router import AgentServiceError, build_feishu_conversation
+from hiclaw.agents.runtime import run_agent_for_conversation
+from hiclaw.core.response import AgentReply
 from hiclaw.config import (
     FEISHU_ALLOWED_CHAT_IDS,
     FEISHU_ALLOWED_OPEN_IDS,
@@ -28,12 +28,12 @@ from hiclaw.config import (
     FEISHU_SESSION_SCOPE_PREFIX,
     SHOW_TOOL_TRACE,
 )
-from hiclaw.feishu_formatting import format_feishu_text
-from hiclaw.media_store import PhotoPayload
-from hiclaw.memory_intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
-from hiclaw.memory_store import append_memory_candidate, append_structured_long_term_memory
-from hiclaw.task_service import handle_task_command
-from hiclaw.session_store import clear_session_id
+from hiclaw.channels.feishu.formatting import format_feishu_text
+from hiclaw.media.store import PhotoPayload
+from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
+from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory
+from hiclaw.tasks.service import handle_task_command
+from hiclaw.memory.session import clear_session_id
 
 logger = logging.getLogger(__name__)
 

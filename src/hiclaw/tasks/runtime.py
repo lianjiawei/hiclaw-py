@@ -6,8 +6,8 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
-from hiclaw.delivery import DeliveryRouter
-from hiclaw.scheduler import setup_scheduler
+from hiclaw.core.delivery import DeliveryRouter
+from hiclaw.tasks.scheduler import setup_scheduler
 
 logger = logging.getLogger(__name__)
 

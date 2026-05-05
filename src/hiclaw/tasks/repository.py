@@ -6,7 +6,7 @@ from typing import Any
 import aiosqlite
 
 from hiclaw.config import TASK_DB_FILE
-from hiclaw.runtime_types import ConversationRef
+from hiclaw.core.types import ConversationRef
 
 
 async def create_scheduled_task_record(
