@@ -24,7 +24,7 @@ from hiclaw.core.response import AgentReply
 from hiclaw.config import AGENT_PROVIDER, PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
 from hiclaw.core.delivery import DeliveryRouter
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
-from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, clear_session_context
+from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, clear_session_context, create_memory_metadata
 from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
 from hiclaw.tasks.service import handle_task_command
 from hiclaw.memory.session import clear_session_id, get_session_file
@@ -542,7 +542,18 @@ async def run_tui() -> None:
             memory_intent = detect_memory_intent(prompt)
             if memory_intent is not None:
                 if should_auto_accept_memory_intent(memory_intent):
-                    target = append_structured_long_term_memory(memory_intent.content, memory_intent.category, memory_intent.slot)
+                    target = append_structured_long_term_memory(
+                        memory_intent.content,
+                        memory_intent.category,
+                        memory_intent.slot,
+                        create_memory_metadata(
+                            category=memory_intent.category,
+                            slot=memory_intent.slot,
+                            reason=memory_intent.reason,
+                            source="user_explicit",
+                            confidence=memory_intent.confidence,
+                        ),
+                    )
                     print_message_block(
                         "Memory",
                         build_memory_intent_ack(memory_intent, True, SHOW_TOOL_TRACE, target.name),
@@ -550,7 +561,19 @@ async def run_tui() -> None:
                         accent=THEME_PRIMARY,
                     )
                 else:
-                    candidate_file = append_memory_candidate(memory_intent.content, memory_intent.category, memory_intent.reason, memory_intent.slot)
+                    candidate_file = append_memory_candidate(
+                        memory_intent.content,
+                        memory_intent.category,
+                        memory_intent.reason,
+                        memory_intent.slot,
+                        create_memory_metadata(
+                            category=memory_intent.category,
+                            slot=memory_intent.slot,
+                            reason=memory_intent.reason,
+                            source="user_candidate",
+                            confidence=memory_intent.confidence,
+                        ),
+                    )
                     print_message_block(
                         "Memory",
                         build_memory_intent_ack(memory_intent, False, SHOW_TOOL_TRACE, candidate_file.name),

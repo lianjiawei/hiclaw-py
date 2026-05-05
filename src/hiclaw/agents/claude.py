@@ -41,7 +41,7 @@ class ClaudeServiceError(Exception):
 def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
     """构造当前 Agent 调用使用的 system prompt。"""
 
-    context_snapshot = build_context_snapshot(session_scope)
+    context_snapshot = build_context_snapshot(session_scope, prompt)
     selected_skills, skill_prompt = build_skill_prompt(prompt)
     selected_skill_names = ", ".join(skill.name for skill in selected_skills) or "无"
 

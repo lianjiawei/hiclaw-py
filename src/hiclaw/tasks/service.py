@@ -29,7 +29,7 @@ CANCEL_INTENT_PATTERNS: tuple[tuple[re.Pattern[str], bool], ...] = (
     (re.compile(r"^(?:取消提醒|取消任务|取消定时|别提醒|不要提醒|不用提醒|别执行|不要执行)(?P<target>.*)$"), False),
     (re.compile(r"^(?:把(?P<target>.+)取消|把(?P<target2>.+)取消掉|把(?P<target3>.+)取消了吧)"), True),
     (re.compile(r"^(?:取消|取消掉|别提醒了|不要提醒了|不用提醒了|别执行了|不要执行了)$"), False),
-    (re.compile(r"^(?:取消|取消掉|帮我把?)[：:，,\s]*(?P<target>.+)$"), True),
+    (re.compile(r"^(?:取消|取消掉|帮我把)[：:，,\s]*(?P<target>.+)$"), True),
     (re.compile(r"^(?:别|不要|不用|不需要)[：:，,\s]*(?P<target>.+)$"), True),
 )
 
@@ -113,6 +113,10 @@ def detect_cancel_intent(text: str) -> str | None:
             if target and target.strip():
                 if target.strip() in {"定时任务", "任务", "提醒", "那个定时任务", "那个任务", "这个定时任务", "这个任务"}:
                     return ""
+                # 防止误判：以普通操作词开头的不要当取消
+                lowered_target = target.strip()
+                if any(lowered_target.startswith(word) for word in ("查", "搜", "天气", "新闻", "几点", "什么")):
+                    return None
                 return target.strip()
             # 没有明确目标，返回空字符串表示需要列出任务
             return ""

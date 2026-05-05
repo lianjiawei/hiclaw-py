@@ -31,7 +31,7 @@ from hiclaw.config import (
 from hiclaw.channels.feishu.formatting import markdown_to_lark_md
 from hiclaw.media.store import PhotoPayload
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
-from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory
+from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, create_memory_metadata
 from hiclaw.memory.store import clear_session_context
 from hiclaw.tasks.service import handle_task_command
 from hiclaw.memory.session import clear_session_id
@@ -268,10 +268,33 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
             memory_intent = detect_memory_intent(text)
             if memory_intent is not None:
                 if should_auto_accept_memory_intent(memory_intent):
-                    target = append_structured_long_term_memory(memory_intent.content, memory_intent.category, memory_intent.slot)
+                    target = append_structured_long_term_memory(
+                        memory_intent.content,
+                        memory_intent.category,
+                        memory_intent.slot,
+                        create_memory_metadata(
+                            category=memory_intent.category,
+                            slot=memory_intent.slot,
+                            reason=memory_intent.reason,
+                            source="user_explicit",
+                            confidence=memory_intent.confidence,
+                        ),
+                    )
                     await send_text_message(client, incoming.chat_id, build_memory_intent_ack(memory_intent, True, SHOW_TOOL_TRACE, target.name))
                 else:
-                    candidate_file = append_memory_candidate(memory_intent.content, memory_intent.category, memory_intent.reason, memory_intent.slot)
+                    candidate_file = append_memory_candidate(
+                        memory_intent.content,
+                        memory_intent.category,
+                        memory_intent.reason,
+                        memory_intent.slot,
+                        create_memory_metadata(
+                            category=memory_intent.category,
+                            slot=memory_intent.slot,
+                            reason=memory_intent.reason,
+                            source="user_candidate",
+                            confidence=memory_intent.confidence,
+                        ),
+                    )
                     await send_text_message(client, incoming.chat_id, build_memory_intent_ack(memory_intent, False, SHOW_TOOL_TRACE, candidate_file.name))
                 return
             prompt = text

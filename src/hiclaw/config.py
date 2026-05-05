@@ -37,6 +37,9 @@ MEMORY_CANDIDATES_DIR = MEMORY_DIR / "candidates"
 MEMORY_CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
 MEMORY_ARCHIVE_DIR = MEMORY_DIR / "archive"
 MEMORY_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+MEMORY_REPORTS_DIR = MEMORY_DIR / "reports"
+MEMORY_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+MEMORY_CONFLICTS_FILE = MEMORY_DIR / "conflicts.jsonl"
 WORKING_STATE_FILE = MEMORY_DIR / "working_state.json"
 SESSION_SUMMARIES_DIR = MEMORY_DIR / "session_summaries"
 SESSION_SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,8 +105,6 @@ ALLOWED_TOOLS = [
     "Edit",
     "Glob",
     "Grep",
-    "WebSearch",
-    "WebFetch",
     "Bash",
     "get_current_time",
     "list_workspace_files",

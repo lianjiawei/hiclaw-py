@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from hiclaw.agents.runtime import run_agent_for_conversation
 from hiclaw.config import SCHEDULER_INTERVAL_SECONDS
 from hiclaw.core.delivery import DeliveryRouter
-from hiclaw.memory.store import archive_old_memories, auto_promote_candidates, clean_old_conversations, meditate_and_organize_memories
+from hiclaw.memory.store import archive_old_memories, auto_promote_candidates, clean_old_conversations, meditate_and_organize_memories, reflect_and_rewrite_memories
 from hiclaw.core.types import ConversationRef
 from hiclaw.tasks.repository import claim_scheduled_task_record, list_due_task_record_ids, release_claimed_task_record, update_task_record_after_run, hard_cancel_task_record
 
@@ -393,14 +393,6 @@ async def execute_scheduled_task(task: dict[str, Any], router: DeliveryRouter) -
         except Exception:
             logger.exception("Scheduled task error delivery failed: %s", task_id)
         await update_task_record_after_run(task_id, error_text, None, "completed")
-    except Exception as exc:
-        logger.exception("Scheduled task failed: %s", task_id)
-        error_text = f"定时任务执行失败：{exc}"
-        try:
-            await send_task_text(router, conversation, error_text)
-        except Exception:
-            logger.exception("Scheduled task error delivery failed: %s", task_id)
-        await update_task_record_after_run(task_id, error_text, None, "completed")
 
 
 async def check_due_tasks(router: DeliveryRouter) -> None:
@@ -451,6 +443,14 @@ async def run_memory_maintenance() -> None:
 
 async def run_memory_meditation() -> None:
     try:
+        reflection_report = await reflect_and_rewrite_memories()
+        if reflection_report.get("used_model"):
+            logger.info(
+                "Memory reflection completed: %d rewrites, %d promoted, %d archive groups",
+                len(reflection_report.get("applied_rewrites", [])),
+                len(reflection_report.get("promoted_candidates", [])),
+                len(reflection_report.get("archived_slots", [])),
+            )
         report = meditate_and_organize_memories()
         logger.info(
             "Memory meditation completed: %d merged, %d cleaned",

@@ -169,7 +169,7 @@ def build_openai_input(prompt: str, uploaded_image: Any | None) -> list[dict[str
 def build_openai_instructions(prompt: str, session_scope: str | None = None) -> str:
     """复用项目记忆和 skill 上下文，并声明 OpenAI 第一版不接 Claude Code 工具。"""
 
-    context = build_context_snapshot(session_scope)
+    context = build_context_snapshot(session_scope, prompt)
     context_block = f"\n\n--- 当前上下文 ---\n\n{context}" if context else ""
 
     return (

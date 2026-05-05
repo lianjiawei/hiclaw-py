@@ -14,14 +14,17 @@ HiClaw Py 是一个支持多通道交互和双 Provider 路由的个人智能体
 - Claude Code 内置工具显性化，例如 `Read`、`Write`、`Edit`、`Glob`、`Grep`、`Bash`。
 - 联网搜索：基于 Tavily API，Agent 可实时搜索互联网获取最新信息。
 - OpenAI Provider 支持普通文本、图片理解、图片生成与图片编辑。
-- 自定义 MCP 工具，例如获取时间、读取工作区文件、向当前会话发送消息、联网搜索。
+- 自定义 MCP 工具，例如获取时间、读取工作区文件、向当前会话发送消息、联网搜索、任务管理。
 - 渠道级访问控制，例如 Telegram Owner 校验与飞书白名单。
 - 连续会话，通过本地 `session_id` 维持上下文。
-- 分层记忆能力，包含长期记忆、工作记忆、会话摘要、对话归档和拟人化记忆机制。
-- 拟人化记忆系统：频率加权、智能提升、夜间冥想整理、自动归档。
+- 分层记忆能力，包含长期记忆、工作记忆、会话摘要、对话归档和记忆治理系统。
+- 记忆治理系统：来源/置信度/作用域标记、冲突检测与归档、衰减与过期管理、相关性检索注入。
+- 夜间记忆反思：LLM 驱动的记忆重写、候选晋升、过期 slot 归档，规则引擎回落。
 - 定时任务，支持一次性、每天、每周任务，支持 session 上下文延续。
-- 自然语言创建定时提醒，例如"30秒后提醒我喝水"。
-- Skill 能力，目前包含表格数据分析与校验 Skill。
+- 自然语言创建与取消定时提醒，支持中文数字与口语化时间表达（如"一分钟后"、"半小时后"）。
+- Agent 可自主使用 `list_tasks` / `create_task` / `cancel_task` 管理定时任务。
+- Skill 能力，包含表格数据分析与校验 Skill、自动化脚本执行 Skill。
+- Bash 工具使用场景指导，鼓励 Agent 在复杂任务中编写脚本自动化执行。
 - 可选本地 ASR，使用 `ffmpeg` + Vosk 处理语音消息。
 - 会话管理优化：文件锁并发保护、超时自动清除、SQLite 统一管理。
 - 工作记忆大小控制：字段字符上限、对话日志自动清理。
@@ -39,10 +42,10 @@ HiClaw Py 是一个支持多通道交互和双 Provider 路由的个人智能体
 - `Claude Provider`：`claude_client.py` 负责 session、memory、skills、MCP tools、Claude Code 内置工具和 Claude Agent SDK 查询流。
 - `OpenAI Provider`：`openai_client.py` 负责普通文本、图片理解，以及图片生成/编辑接口调用。
 - `Media Pipeline`：`media_store.py` 处理图片和语音上传；`speech_client.py` 通过 `ffmpeg` + Vosk 做本地语音转文字。
-- `Tools`：`agent_tools.py` 提供自定义 MCP tools，同时白名单允许 Claude Code 内置工具，例如 `Read`、`Edit`、`WebSearch`、`WebFetch`、`Bash`。
-- `State and Knowledge`：`config.py`、`session_store.py`、`memory_store.py`、`memory_intent.py`、`memory_frequency.py` 负责 .env 配置、按通道 session、分层记忆、候选记忆治理、频率加权、冥想整理、对话归档和本地运行目录。
-- `Skills`：`skill_store.py` 负责本地 Skill prompt 的选择和注入。
-- `Scheduler`：`scheduler.py`、`scheduler_store.py` 负责自然语言定时任务解析、SQLite 持久化、轮询到期任务，并回到 Agent Core 执行。
+- `Tools`：`agent_tools.py` 提供自定义 MCP tools（时间、文件读取、消息发送、联网搜索、任务管理），同时白名单允许 Claude Code 内置工具，例如 `Read`、`Edit`、`Bash`。
+- `State and Knowledge`：`config.py`、`session_store.py`、`memory_store.py`、`memory_intent.py`、`memory_frequency.py` 负责 .env 配置、按通道 session、分层记忆、元数据治理（来源/置信度/作用域）、冲突检测与归档、频率加权、衰减管理、夜间反思重写、相关性检索注入、对话归档和本地运行目录。
+- `Skills`：`skill_store.py` 负责本地 Skill prompt 的选择和注入，包含表格分析、自动化脚本执行等 Skill。
+- `Scheduler`：`scheduler.py`、`scheduler_store.py` 负责自然语言定时任务解析（支持中文数字与口语化时间）、SQLite 持久化、轮询到期任务、夜间记忆冥想调度，并回到 Agent Core 执行。
 
 ## 环境要求
 

@@ -36,6 +36,7 @@ from hiclaw.memory.store import (
     append_memory_candidate,
     append_structured_long_term_memory,
     clear_session_context,
+    create_memory_metadata,
     list_memory_candidates,
     load_long_term_memory,
     reject_memory_candidate,
@@ -121,10 +122,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         memory_intent = detect_memory_intent(update.message.text)
         if memory_intent is not None:
             if should_auto_accept_memory_intent(memory_intent):
-                target = append_structured_long_term_memory(memory_intent.content, memory_intent.category, memory_intent.slot)
+                target = append_structured_long_term_memory(
+                    memory_intent.content,
+                    memory_intent.category,
+                    memory_intent.slot,
+                    create_memory_metadata(
+                        category=memory_intent.category,
+                        slot=memory_intent.slot,
+                        reason=memory_intent.reason,
+                        source="user_explicit",
+                        confidence=memory_intent.confidence,
+                    ),
+                )
                 await reply_plain_text(update, build_memory_intent_ack(memory_intent, True, SHOW_TOOL_TRACE, target.name))
             else:
-                candidate_file = append_memory_candidate(memory_intent.content, memory_intent.category, memory_intent.reason, memory_intent.slot)
+                candidate_file = append_memory_candidate(
+                    memory_intent.content,
+                    memory_intent.category,
+                    memory_intent.reason,
+                    memory_intent.slot,
+                    create_memory_metadata(
+                        category=memory_intent.category,
+                        slot=memory_intent.slot,
+                        reason=memory_intent.reason,
+                        source="user_candidate",
+                        confidence=memory_intent.confidence,
+                    ),
+                )
                 await reply_plain_text(update, build_memory_intent_ack(memory_intent, False, SHOW_TOOL_TRACE, candidate_file.name))
             return
 
@@ -282,7 +306,10 @@ async def remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await reply_plain_text(update, "用法：/remember 这里填写要写入长期记忆的内容")
         return
 
-    candidate_file = append_memory_candidate(memory_note)
+    candidate_file = append_memory_candidate(
+        memory_note,
+        metadata=create_memory_metadata(category="general", source="manual_remember", confidence="medium"),
+    )
     await reply_plain_text(update, f"已写入候选记忆区，等待后续确认：\n- {candidate_file.name}")
 
 
