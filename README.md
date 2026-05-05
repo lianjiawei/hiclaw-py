@@ -11,9 +11,10 @@ HiClaw Py 是一个支持多通道交互和双 Provider 路由的个人智能体
 
 - Telegram / PowerShell TUI / 飞书多通道消息接入。
 - Claude Agent SDK + OpenAI 双 Provider 模型调用。
-- Claude Code 内置工具显性化，例如 `Read`、`Write`、`Edit`、`Glob`、`Grep`、`WebSearch`、`WebFetch`、`Bash`。
+- Claude Code 内置工具显性化，例如 `Read`、`Write`、`Edit`、`Glob`、`Grep`、`Bash`。
+- 联网搜索：基于 Tavily API，Agent 可实时搜索互联网获取最新信息。
 - OpenAI Provider 支持普通文本、图片理解、图片生成与图片编辑。
-- 自定义 MCP 工具，例如获取时间、读取工作区文件、向当前会话发送消息。
+- 自定义 MCP 工具，例如获取时间、读取工作区文件、向当前会话发送消息、联网搜索。
 - 渠道级访问控制，例如 Telegram Owner 校验与飞书白名单。
 - 连续会话，通过本地 `session_id` 维持上下文。
 - 分层记忆能力，包含长期记忆、工作记忆、会话摘要、对话归档和拟人化记忆机制。
@@ -141,6 +142,9 @@ ANTHROPIC_MODEL=your_model_name
 - `FEISHU_ALLOWED_OPEN_IDS` / `FEISHU_ALLOWED_CHAT_IDS`：飞书通道白名单，逗号分隔；两个都为空时允许所有飞书用户/会话，正式使用建议至少配置一项。
 - `FEISHU_REPLY_PROCESSING_MESSAGE`：飞书通道收到消息后是否先回复“正在处理”，`1` 开启，`0` 关闭。
 - `SHOW_TOOL_TRACE`：是否在支持的消息通道中显示工具调用过程，`1` 开启，`0` 关闭。
+- `TAVILY_API_KEY`：Tavily 联网搜索 API Key，在 https://app.tavily.com 注册获取（免费 1000 次/月）。
+- `TAVILY_SEARCH_DEPTH`：搜索深度，`basic` 快速（推荐），`advanced` 深度。
+- `TAVILY_MAX_RESULTS`：单次搜索返回最大结果数，默认 5。
 - `SCHEDULER_INTERVAL_SECONDS`：定时任务轮询间隔，默认 `30` 秒。
 - `SESSION_TIMEOUT_SECONDS`：会话超时时间，默认 `86400` 秒（24 小时）。
 - `CONVERSATION_RETENTION_DAYS`：对话日志保留天数，默认 `30` 天。
@@ -191,7 +195,39 @@ OPENAI_IMAGE_OUTPUT_FORMAT=png
 OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS=0
 ```
 
-第一版 OpenAI Provider 支持普通文本、图片理解和图片生成/编辑。文字聊天默认走 `OPENAI_BASE_URL`，图片生成/编辑可以单独配置 `OPENAI_IMAGE_BASE_URL`、`OPENAI_IMAGE_API_KEY` 和图片接口路径；不配置图片专用项时，会复用文本 OpenAI 配置和标准 Images API 路径。部分中转服务不接受 `quality`、`output_format`、`response_format` 等可选字段，可以保持 `OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS=0` 只发送最小参数。图片生成或编辑结果会直接以内存 bytes 返回到支持的消息通道，不写入本地文件。Claude Code 内置工具、MCP 工具、文件读写、Bash、WebSearch 等复杂 Agent 能力仍建议使用 `AGENT_PROVIDER=claude`。
+第一版 OpenAI Provider 支持普通文本、图片理解和图片生成/编辑。文字聊天默认走 `OPENAI_BASE_URL`，图片生成/编辑可以单独配置 `OPENAI_IMAGE_BASE_URL`、`OPENAI_IMAGE_API_KEY` 和图片接口路径；不配置图片专用项时，会复用文本 OpenAI 配置和标准 Images API 路径。部分中转服务不接受 `quality`、`output_format`、`response_format` 等可选字段，可以保持 `OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS=0` 只发送最小参数。图片生成或编辑结果会直接以内存 bytes 返回到支持的消息通道，不写入本地文件。Claude Code 内置工具、MCP 工具、文件读写、Bash 等复杂 Agent 能力仍建议使用 `AGENT_PROVIDER=claude`。
+
+### 联网搜索配置
+
+项目默认使用 [Tavily](https://tavily.com/) 作为搜索引擎，Agent 可通过 `web_search` 工具实时搜索互联网。Tavily 专为 AI Agent 设计，返回结构化结果（标题、URL、内容摘要），不需要自己解析 HTML。
+
+注册获取 API Key：
+
+1. 打开 https://app.tavily.com 注册账号
+2. 登录后在 Dashboard 复制 API Key
+3. 免费额度：每月 1000 次搜索
+
+在 `.env` 中配置：
+
+```env
+TAVILY_API_KEY=tvly-your_key_here
+TAVILY_SEARCH_DEPTH=basic
+TAVILY_MAX_RESULTS=5
+```
+
+配置说明：
+
+- `TAVILY_API_KEY`：Tavily API Key，**必须填写**才能使用搜索。
+- `TAVILY_SEARCH_DEPTH`：`basic` 快速搜索（推荐），`advanced` 深度搜索（消耗更多配额）。
+- `TAVILY_MAX_RESULTS`：单次搜索返回的最大结果数，默认 5。
+
+如果不配置 `TAVILY_API_KEY`，`web_search` 工具会返回提示信息，Agent 会被告知搜索不可用，但不会影响其他功能。
+
+验证搜索是否可用：
+
+```powershell
+python -c "from tavily import TavilyClient; from dotenv import load_dotenv; import os; load_dotenv(); c=TavilyClient(api_key=os.getenv('TAVILY_API_KEY')); r=c.search(query='Python教程', max_results=2); [print(f'{i}. {x[\"title\"]}') for i,x in enumerate(r.get('results',[]),1)]"
+```
 
 ## 语音识别配置
 
@@ -726,9 +762,9 @@ await create_scheduled_task(
 
 `-e` 是 editable install，表示以可编辑模式安装当前项目。这样源码改动后不需要反复重新安装，适合开发阶段。
 
-### 为什么模型内搜索工具失败，但 Bash 抓网页可以成功？
+### 为什么搜索不工作？
 
-Claude Code 的 `WebSearch`、`WebFetch` 是否可用取决于当前模型服务和 Claude Code 运行环境；Bash 访问网络则取决于本机网络和命令行工具。两者不是同一条链路。
+联网搜索依赖 Tavily API，需要先在 https://app.tavily.com 注册并获取 API Key，然后在 `.env` 中配置 `TAVILY_API_KEY`。不配置时 Agent 会被告知搜索不可用，其他功能不受影响。
 
 ### Vosk 启动时打印很多 `VoskAPI` 日志正常吗？
 

@@ -63,11 +63,7 @@ def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
 4. 如果使用 Bash，请优先选择当前环境更稳妥的命令。
 5. 当前环境里不要默认使用 `python3`，优先尝试 `python`。
 6. 当前环境不保证安装了 `gh` 等额外命令行工具，不要默认依赖它们。
-7. **WebSearch/WebFetch 不可用时的降级策略**：
-   - 先尝试调用 WebSearch；如果返回空结果或报错，不要重试太多次（最多 2 次），立刻切换到 Bash 命令。
-   - 使用 `curl -s "https://www.google.com/search?q=关键词"` 或 `curl -s "https://html.duckduckgo.com/html/?q=关键词"` 获取搜索结果，再用 Grep 提取关键信息。
-   - 搜索中文内容时，关键词尽量用中文（如 "NBA 今日新闻" 而不是 "NBA today news"）。
-   - 如果 Bash 搜索也失败，就如实告诉用户工具受限，并给出直接访问建议。
+7. **联网搜索**：需要搜索互联网信息时，请使用 web_search 工具。
 8. 回答尽量使用自然、清晰的中文。
 """.strip()
 

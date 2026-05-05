@@ -7,7 +7,9 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from hiclaw.config import WORKSPACE_DIR
+from tavily import TavilyClient
+
+from hiclaw.config import TAVILY_API_KEY, TAVILY_MAX_RESULTS, TAVILY_SEARCH_DEPTH, WORKSPACE_DIR
 from hiclaw.delivery import MessageSender, send_sender_text
 
 
@@ -85,6 +87,47 @@ async def read_workspace_file(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@tool("web_search", "使用 Tavily 搜索引擎搜索互联网，返回结果摘要和 URL。", {"query": str})
+async def web_search(args: dict[str, Any]) -> dict[str, Any]:
+    if not TAVILY_API_KEY:
+        return {
+            "content": [{"type": "text", "text": "Tavily API key is not configured. Set TAVILY_API_KEY in .env."}],
+            "is_error": True,
+        }
+
+    query = args["query"]
+    try:
+        client = TavilyClient(api_key=TAVILY_API_KEY)
+        response = client.search(
+            query=query,
+            search_depth=TAVILY_SEARCH_DEPTH,
+            max_results=TAVILY_MAX_RESULTS,
+        )
+    except Exception as exc:
+        return {
+            "content": [{"type": "text", "text": f"Search failed: {exc}"}],
+            "is_error": True,
+        }
+
+    results = response.get("results", [])
+    if not results:
+        return {
+            "content": [{"type": "text", "text": f"No results found for: {query}"}],
+        }
+
+    lines = []
+    for i, r in enumerate(results, 1):
+        title = r.get("title", "")
+        url = r.get("url", "")
+        content = (r.get("content", "") or "")[:300]
+        lines.append(f"{i}. {title}\n   {url}\n   {content}")
+    text = "\n\n".join(lines)
+
+    return {
+        "content": [{"type": "text", "text": f"Search results for '{query}':\n\n{text}"}],
+    }
+
+
 def build_mcp_server(sender: MessageSender, target_id: str | int, uploaded_image: Any | None = None):
     """构造当前会话可用的 MCP 工具集合。"""
 
@@ -128,6 +171,7 @@ def build_mcp_server(sender: MessageSender, target_id: str | int, uploaded_image
         list_workspace_files,
         read_workspace_file,
         send_message,
+        web_search,
     ]
     if uploaded_image is not None:
         tools.append(get_uploaded_image)

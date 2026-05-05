@@ -49,6 +49,10 @@ SCHEDULER_INTERVAL_SECONDS = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "30"))
 SHOW_TOOL_TRACE = os.getenv("SHOW_TOOL_TRACE", "0") == "1"
 AGENT_PROVIDER = os.getenv("AGENT_PROVIDER", "claude")
 
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+TAVILY_SEARCH_DEPTH = os.getenv("TAVILY_SEARCH_DEPTH", "basic")
+TAVILY_MAX_RESULTS = int(os.getenv("TAVILY_MAX_RESULTS", "5"))
+
 TELEGRAM_CONNECT_TIMEOUT = float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "30"))
 TELEGRAM_READ_TIMEOUT = float(os.getenv("TELEGRAM_READ_TIMEOUT", "30"))
 TELEGRAM_WRITE_TIMEOUT = float(os.getenv("TELEGRAM_WRITE_TIMEOUT", "30"))
@@ -106,9 +110,11 @@ ALLOWED_TOOLS = [
     "read_workspace_file",
     "send_message",
     "get_uploaded_image",
+    "web_search",
     "mcp__hiclaw__get_current_time",
     "mcp__hiclaw__list_workspace_files",
     "mcp__hiclaw__read_workspace_file",
     "mcp__hiclaw__send_message",
     "mcp__hiclaw__get_uploaded_image",
+    "mcp__hiclaw__web_search",
 ]
