@@ -35,6 +35,7 @@ from hiclaw.memory.store import (
     accept_memory_candidate,
     append_memory_candidate,
     append_structured_long_term_memory,
+    clear_session_context,
     list_memory_candidates,
     load_long_term_memory,
     reject_memory_candidate,
@@ -251,7 +252,9 @@ async def reset_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not is_owner(update):
         return
 
-    clear_session_id(build_telegram_conversation(update).session_scope)
+    session_scope = build_telegram_conversation(update).session_scope
+    clear_session_id(session_scope)
+    clear_session_context(session_scope)
     await update.message.reply_text("当前会话已清空，下一条消息会开启新会话。")
 
 

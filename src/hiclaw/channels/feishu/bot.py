@@ -32,6 +32,7 @@ from hiclaw.channels.feishu.formatting import markdown_to_lark_md
 from hiclaw.media.store import PhotoPayload
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
 from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory
+from hiclaw.memory.store import clear_session_context
 from hiclaw.tasks.service import handle_task_command
 from hiclaw.memory.session import clear_session_id
 
@@ -226,7 +227,9 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
         return
 
     if incoming.text.strip().lower() == "/reset":
-        clear_session_id(build_session_scope(incoming))
+        session_scope = build_session_scope(incoming)
+        clear_session_id(session_scope)
+        clear_session_context(session_scope)
         await send_text_message(client, incoming.chat_id, "当前会话已清空，下一条消息会开启新会话。")
         return
 

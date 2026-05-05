@@ -429,6 +429,26 @@ def save_session_summary(scope: str | None, user_message: str, assistant_reply: 
     get_session_summary_file(scope).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def clear_session_context(scope: str | None = None) -> None:
+    """清空当前会话级上下文，但保留长期记忆。"""
+
+    ensure_memory_files()
+
+    working_state_file = get_working_state_file(scope)
+    if working_state_file.exists():
+        working_state_file.write_text(json.dumps(DEFAULT_WORKING_STATE, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    summary_file = get_session_summary_file(scope)
+    summary_payload = {
+        "session_scope": _sanitize_scope(scope),
+        "updated_at": "",
+        "latest_user_message": "",
+        "latest_assistant_reply_excerpt": "",
+        "recent_topics": [],
+    }
+    summary_file.write_text(json.dumps(summary_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def build_context_snapshot(scope: str | None = None) -> str:
     ensure_memory_files()
     working_state = load_working_state(scope)

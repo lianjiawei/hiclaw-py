@@ -16,6 +16,7 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.styles import Style
 
 from hiclaw.agents.router import AgentServiceError, build_tui_conversation
 from hiclaw.agents.runtime import run_agent_for_conversation
@@ -23,7 +24,7 @@ from hiclaw.core.response import AgentReply
 from hiclaw.config import AGENT_PROVIDER, PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
 from hiclaw.core.delivery import DeliveryRouter
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
-from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory
+from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, clear_session_context
 from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
 from hiclaw.tasks.service import handle_task_command
 from hiclaw.memory.session import clear_session_id, get_session_file
@@ -35,6 +36,21 @@ PROMPT = "> "
 INPUT_HISTORY_LIMIT = 100
 INPUT_HISTORY: list[str] = []
 PROMPT_HISTORY = InMemoryHistory()
+THEME_PRIMARY = "38;2;199;125;43"
+THEME_PRIMARY_BOLD = "1;38;2;199;125;43"
+THEME_SECONDARY = "38;2;154;143;133"
+THEME_MUTED = "38;2;111;102;94"
+THEME_SOFT = "38;2;221;214;207"
+THEME_ERROR = "31;1"
+PROMPT_STYLE = Style.from_dict(
+    {
+        "completion-menu": "bg:#201c1a #ddd6cf",
+        "completion-menu.completion.current": "bg:#c77d2b #fffaf3 bold",
+        "completion-menu.meta.completion": "bg:#201c1a #9a8f85",
+        "completion-menu.meta.completion.current": "bg:#c77d2b #fff1dc",
+        "auto-suggestion": "#8b8178",
+    }
+)
 
 
 class TuiMode:
@@ -67,7 +83,7 @@ COMMANDS = [
 @dataclass(slots=True)
 class ConsoleBot:
     async def send_text(self, target_id: str, text: str) -> None:
-        print_message_block("Tool", text, accent="34")
+        print_message_block("Tool", text, accent=THEME_SECONDARY)
 
     async def send_message(self, chat_id: str | int, text: str) -> None:
         await self.send_text(str(chat_id), text)
@@ -199,17 +215,17 @@ def print_header() -> None:
     width = terminal_width()
     rule = "─" * (width - 2)
     session_file = get_session_file(get_tui_scope())
-    print(color(f"╭{rule}╮", "36"))
-    print(box_line_center("HiClaw TUI", width, "36;1"))
-    print(box_line_center("Local Agent Console", width, "96"))
-    print(panel_line("Provider", AGENT_PROVIDER, width, "●", "36;1"))
-    print(panel_line("Workspace", display_path(WORKSPACE_DIR), width, "◆", "35;1"))
-    print(panel_line("Session", display_path(session_file), width, "◦", "33;1"))
-    print(panel_line("Images", display_path(TUI_OUTPUT_DIR), width, "■", "32;1"))
-    print(color(f"├{rule}┤", "36"))
-    print(box_line("Enter 发送；/paste 多行；/status 查看状态；/help 查看命令", width, "90"))
-    print(box_line("/reset 清空会话；/clear 清屏；/retry 重发；/exit 退出", width, "90"))
-    print(color(f"╰{rule}╯", "36"))
+    print(color(f"╭{rule}╮", THEME_SECONDARY))
+    print(box_line_center("HiClaw TUI", width, THEME_PRIMARY_BOLD))
+    print(box_line_center("Local Agent Console", width, THEME_SECONDARY))
+    print(panel_line("Provider", AGENT_PROVIDER, width, "●", THEME_PRIMARY_BOLD))
+    print(panel_line("Workspace", display_path(WORKSPACE_DIR), width, "◆", THEME_PRIMARY))
+    print(panel_line("Session", display_path(session_file), width, "◦", THEME_PRIMARY))
+    print(panel_line("Images", display_path(TUI_OUTPUT_DIR), width, "■", THEME_PRIMARY))
+    print(color(f"├{rule}┤", THEME_SECONDARY))
+    print(box_line("Enter 发送；/paste 多行；/status 查看状态；/help 查看命令", width, THEME_MUTED))
+    print(box_line("/reset 清空会话；/clear 清屏；/retry 重发；/exit 退出", width, THEME_MUTED))
+    print(color(f"╰{rule}╯", THEME_SECONDARY))
     print()
 
 
@@ -217,13 +233,13 @@ def print_status_bar(state: TuiState) -> None:
     width = terminal_width()
     rule = "─" * width
     instance_name = trim_middle(state.session_scope.split(":", 1)[-1], 20)
-    print(color(rule, "90"))
-    print(color(f"[HiClaw] {state.provider.upper()} | {state.mode} | {instance_name}", "36;1"))
-    print(color(f"Dir: {display_path(WORKSPACE_DIR)}", "90"))
-    print(color(rule, "90"))
+    print(color(rule, THEME_MUTED))
+    print(color(f"[HiClaw] {state.provider.upper()} | {state.mode} | {instance_name}", THEME_PRIMARY_BOLD))
+    print(color(f"Dir: {display_path(WORKSPACE_DIR)}", THEME_SECONDARY))
+    print(color(rule, THEME_MUTED))
 
 
-def print_message_block(title: str, text: str, subtitle: str | None = None, accent: str = "36") -> None:
+def print_message_block(title: str, text: str, subtitle: str | None = None, accent: str = THEME_PRIMARY) -> None:
     width = terminal_width()
     lines = text.rstrip().splitlines() if text.strip() else ["(empty)"]
     print()
@@ -237,7 +253,7 @@ def print_message_block(title: str, text: str, subtitle: str | None = None, acce
     print()
 
 
-def print_turn_block(title: str, text: str, subtitle: str | None = None, accent: str = "36") -> None:
+def print_turn_block(title: str, text: str, subtitle: str | None = None, accent: str = THEME_PRIMARY) -> None:
     print_message_block(title, text, subtitle=subtitle, accent=accent)
 
 
@@ -267,26 +283,26 @@ def render_markdown_for_terminal(text: str) -> str:
         if stripped.startswith("```"):
             if not in_code:
                 label = stripped[3:].strip() or "code"
-                rendered.append(color(f"┌─ {label} " + "─" * max(0, min(48, terminal_width()) - len(label) - 6), "90"))
+                rendered.append(color(f"┌─ {label} " + "─" * max(0, min(48, terminal_width()) - len(label) - 6), THEME_MUTED))
                 in_code = True
             else:
-                rendered.append(color("└" + "─" * max(0, min(48, terminal_width()) - 1), "90"))
+                rendered.append(color("└" + "─" * max(0, min(48, terminal_width()) - 1), THEME_MUTED))
                 in_code = False
             continue
         if in_code:
-            rendered.append(color(line, "90"))
+            rendered.append(color(line, THEME_SECONDARY))
             continue
         if stripped.startswith("### "):
-            rendered.append(color(f"[ {stripped[4:]} ]", "36;1"))
+            rendered.append(color(f"[ {stripped[4:]} ]", THEME_PRIMARY_BOLD))
             continue
         if stripped.startswith("## "):
-            rendered.append(color(f"[ {stripped[3:]} ]", "36;1"))
+            rendered.append(color(f"[ {stripped[3:]} ]", THEME_PRIMARY_BOLD))
             continue
         if stripped.startswith("# "):
-            rendered.append(color(f"[ {stripped[2:]} ]", "36;1"))
+            rendered.append(color(f"[ {stripped[2:]} ]", THEME_PRIMARY_BOLD))
             continue
         if stripped.startswith("> "):
-            rendered.append(color(f"│ {stripped[2:]}", "90"))
+            rendered.append(color(f"│ {stripped[2:]}", THEME_MUTED))
             continue
         if stripped.startswith("- ") or stripped.startswith("* "):
             rendered.append(f"  • {stripped[2:]}")
@@ -300,7 +316,7 @@ def format_command_suggestions(prefix: str, selected_index: int) -> list[str]:
     if prefix == "/":
         matched = COMMANDS
     if not matched:
-        return [color("  没有匹配的命令", "90")]
+        return [color("  没有匹配的命令", THEME_MUTED)]
     name_width = max(display_width(command.name) for command in matched)
     selected_index = selected_index % len(matched)
     lines: list[str] = []
@@ -308,7 +324,7 @@ def format_command_suggestions(prefix: str, selected_index: int) -> list[str]:
         marker = ">" if index == selected_index else " "
         command_name = pad_display(command.name, name_width)
         if index == selected_index:
-            lines.append(f"{color(marker, '33;1')} {color(command_name, '36;1')}  {command.description}")
+            lines.append(f"{color(marker, THEME_PRIMARY_BOLD)} {color(command_name, THEME_PRIMARY_BOLD)}  {command.description}")
         else:
             lines.append(f"{marker} {command_name}  {command.description}")
     return lines
@@ -316,12 +332,13 @@ def format_command_suggestions(prefix: str, selected_index: int) -> list[str]:
 
 def read_prompt() -> str:
     return pt_prompt(
-        ANSI(color(PROMPT, "36;1")),
+        ANSI(color(PROMPT, THEME_PRIMARY_BOLD)),
         completer=CommandCompleter(),
         complete_while_typing=True,
         complete_in_thread=True,
         history=PROMPT_HISTORY,
         auto_suggest=AutoSuggestFromHistory(),
+        style=PROMPT_STYLE,
     )
 
 
@@ -330,7 +347,7 @@ def read_multiline() -> str:
         "Multiline",
         "进入多行输入模式。单独一行 `.` 或 `/send` 发送，`/preview` 预览，`/cancel` 放弃。",
         subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), TuiMode.MULTILINE),
-        accent="34",
+        accent=THEME_PRIMARY,
     )
     lines: list[str] = []
     while True:
@@ -342,9 +359,9 @@ def read_multiline() -> str:
         if line == "/preview":
             preview = "\n".join(lines).strip()
             if not preview:
-                print_message_block("Preview", "当前多行输入为空。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Multiline"), accent="90")
+                print_message_block("Preview", "当前多行输入为空。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Multiline"), accent=THEME_MUTED)
             else:
-                print_message_block("Preview", preview, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), f"{len(lines)} lines"), accent="90")
+                print_message_block("Preview", preview, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), f"{len(lines)} lines"), accent=THEME_MUTED)
             continue
         lines.append(line)
     return "\n".join(lines).strip()
@@ -370,7 +387,7 @@ def print_help() -> None:
         "/tasks",
         "/cancel 任务ID",
     ]
-    print_message_block("Commands", "\n".join(lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "TUI commands"), accent="34")
+    print_message_block("Commands", "\n".join(lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "TUI commands"), accent=THEME_PRIMARY)
 
 
 def print_status(state: TuiState) -> None:
@@ -383,7 +400,7 @@ def print_status(state: TuiState) -> None:
         f"Last latency: {state.last_latency_ms if state.last_latency_ms is not None else '-'} ms",
         f"Last error: {state.last_error or '-'}",
     ])
-    print_message_block("Status", text, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent="35")
+    print_message_block("Status", text, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent=THEME_SECONDARY)
 
 
 def save_reply_images(reply: AgentReply) -> list[Path]:
@@ -405,7 +422,7 @@ async def run_thinking_indicator(stop_event: asyncio.Event) -> None:
     frames = ["处理中", "处理中.", "处理中..", "处理中..."]
     index = 0
     while not stop_event.is_set():
-        sys.stdout.write("\r\033[2K" + color(frames[index % len(frames)], "90"))
+        sys.stdout.write("\r\033[2K" + color(frames[index % len(frames)], THEME_MUTED))
         sys.stdout.flush()
         index += 1
         try:
@@ -417,13 +434,13 @@ async def run_thinking_indicator(stop_event: asyncio.Event) -> None:
 
 
 def render_turn(provider: str, reply: AgentReply, saved_images: list[Path], elapsed_ms: int) -> None:
-    rule = color("─" * terminal_width(), "90")
+    rule = color("─" * terminal_width(), THEME_MUTED)
     print()
     print(render_markdown_for_terminal(reply.text.rstrip()) if reply.text.strip() else "(empty)")
     if saved_images:
         print()
         for path in saved_images:
-            print(color(f"图片输出: {display_path(path)}", "32;1"))
+            print(color(f"图片输出: {display_path(path)}", THEME_PRIMARY_BOLD))
     print(rule)
     print()
 
@@ -491,20 +508,21 @@ async def run_tui() -> None:
                 continue
             if command == "/retry":
                 if not state.last_user_input:
-                    print_message_block("System", "还没有可以重发的上一条输入。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Retry"), accent="90")
+                    print_message_block("System", "还没有可以重发的上一条输入。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Retry"), accent=THEME_MUTED)
                     continue
                 prompt = state.last_user_input
             if command == "/provider":
-                print_message_block("Provider", f"当前 Provider: {AGENT_PROVIDER}", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent="32")
+                print_message_block("Provider", f"当前 Provider: {AGENT_PROVIDER}", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent=THEME_PRIMARY)
                 continue
             if command == "/reset":
                 clear_session_id(state.session_scope)
-                print_message_block("Session", "TUI 连续会话已清空。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Fresh session"), accent="32")
+                clear_session_context(state.session_scope)
+                print_message_block("Session", "TUI 连续会话已清空。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Fresh session"), accent=THEME_PRIMARY)
                 continue
             if command.startswith("/schedule") or command.startswith("/schedule_in") or command.startswith("/cancel") or command == "/tasks":
                 result = await handle_task_command(conversation, prompt)
                 if result.handled:
-                    print_message_block("Schedule", result.message, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "TUI task"), accent="32")
+                    print_message_block("Schedule", result.message, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "TUI task"), accent=THEME_PRIMARY)
                     continue
                 continue
             if command == "/paste":
@@ -513,12 +531,12 @@ async def run_tui() -> None:
                 prompt = await asyncio.to_thread(read_multiline)
                 state.mode = TuiMode.NORMAL
                 if not prompt:
-                    print_message_block("System", "已取消多行输入。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), TuiMode.NORMAL), accent="90")
+                    print_message_block("System", "已取消多行输入。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), TuiMode.NORMAL), accent=THEME_MUTED)
                     continue
 
             result = await handle_task_command(conversation, prompt)
             if result.handled:
-                print_message_block("Schedule", result.message, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "TUI task"), accent="32")
+                print_message_block("Schedule", result.message, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "TUI task"), accent=THEME_PRIMARY)
                 continue
 
             memory_intent = detect_memory_intent(prompt)
@@ -529,7 +547,7 @@ async def run_tui() -> None:
                         "Memory",
                         build_memory_intent_ack(memory_intent, True, SHOW_TOOL_TRACE, target.name),
                         subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Structured memory"),
-                        accent="32",
+                        accent=THEME_PRIMARY,
                     )
                 else:
                     candidate_file = append_memory_candidate(memory_intent.content, memory_intent.category, memory_intent.reason, memory_intent.slot)
@@ -537,7 +555,7 @@ async def run_tui() -> None:
                         "Memory",
                         build_memory_intent_ack(memory_intent, False, SHOW_TOOL_TRACE, candidate_file.name),
                         subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Candidate memory"),
-                        accent="33",
+                        accent=THEME_PRIMARY,
                     )
                 continue
             try:
@@ -547,7 +565,7 @@ async def run_tui() -> None:
                 state.last_error = str(exc)
                 state.mode = TuiMode.NORMAL
                 state.is_busy = False
-                print(color(f"错误: {exc}", "31;1"))
+                print(color(f"错误: {exc}", THEME_ERROR))
             except KeyboardInterrupt:
                 print()
                 break
