@@ -11,6 +11,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
 
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.history import InMemoryHistory
+
 from hiclaw.agents.router import AgentServiceError, build_tui_conversation
 from hiclaw.agents.runtime import run_agent_for_conversation
 from hiclaw.core.response import AgentReply
@@ -26,6 +32,9 @@ TUI_SESSION_SCOPE_PREFIX = "tui"
 TUI_INSTANCE_ID = os.getenv("HICLAW_TUI_INSTANCE_ID", f"pid{os.getpid()}_{uuid.uuid4().hex[:8]}")
 MIN_PANEL_WIDTH = 72
 PROMPT = "> "
+INPUT_HISTORY_LIMIT = 100
+INPUT_HISTORY: list[str] = []
+PROMPT_HISTORY = InMemoryHistory()
 
 
 class TuiMode:
@@ -50,7 +59,7 @@ COMMANDS = [
     CommandInfo("/schedule_in", "创建单次定时任务"),
     CommandInfo("/tasks", "查看当前 TUI 定时任务"),
     CommandInfo("/cancel", "取消指定定时任务"),
-    CommandInfo("/paste", "进入多行输入，单独一行 . 结束"),
+    CommandInfo("/paste", "进入多行输入，支持 /preview /send /cancel"),
     CommandInfo("/exit", "退出"),
 ]
 
@@ -74,6 +83,21 @@ class TuiState:
     last_image_path: str | None = None
     last_latency_ms: int | None = None
     last_user_input: str | None = None
+
+
+class CommandCompleter(Completer):
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor.lstrip()
+        if not text.startswith("/"):
+            return
+        for command in COMMANDS:
+            if command.name.startswith(text):
+                yield Completion(
+                    command.name,
+                    start_position=-len(text),
+                    display=command.name,
+                    display_meta=command.description,
+                )
 
 
 def get_tui_scope() -> str:
@@ -192,12 +216,10 @@ def print_header() -> None:
 def print_status_bar(state: TuiState) -> None:
     width = terminal_width()
     rule = "─" * width
-    session_name = trim_middle(state.session_scope, 24)
-    last_latency = f"{state.last_latency_ms}ms" if state.last_latency_ms is not None else "-"
-    last_image = trim_middle(state.last_image_path or "-", 28)
+    instance_name = trim_middle(state.session_scope.split(":", 1)[-1], 20)
     print(color(rule, "90"))
-    print(color(f"[HiClaw] {state.provider.upper()} | {state.mode} | {session_name}", "36;1"))
-    print(color(f"Workspace: {display_path(WORKSPACE_DIR)} | Last: {last_latency}", "90"))
+    print(color(f"[HiClaw] {state.provider.upper()} | {state.mode} | {instance_name}", "36;1"))
+    print(color(f"Dir: {display_path(WORKSPACE_DIR)}", "90"))
     print(color(rule, "90"))
 
 
@@ -223,6 +245,17 @@ def build_meta_subtitle(*parts: str) -> str:
     return "  |  ".join(part.strip() for part in parts if part and part.strip())
 
 
+def record_input_history(text: str) -> None:
+    value = text.strip()
+    if not value:
+        return
+    if INPUT_HISTORY and INPUT_HISTORY[-1] == value:
+        return
+    INPUT_HISTORY.append(value)
+    if len(INPUT_HISTORY) > INPUT_HISTORY_LIMIT:
+        del INPUT_HISTORY[:-INPUT_HISTORY_LIMIT]
+
+
 def render_markdown_for_terminal(text: str) -> str:
     lines = text.rstrip().splitlines()
     if not lines:
@@ -234,10 +267,10 @@ def render_markdown_for_terminal(text: str) -> str:
         if stripped.startswith("```"):
             if not in_code:
                 label = stripped[3:].strip() or "code"
-                rendered.append(color(f"┌─ {label} " + "─" * max(0, terminal_width() - len(label) - 6), "90"))
+                rendered.append(color(f"┌─ {label} " + "─" * max(0, min(48, terminal_width()) - len(label) - 6), "90"))
                 in_code = True
             else:
-                rendered.append(color("└" + "─" * (terminal_width() - 1), "90"))
+                rendered.append(color("└" + "─" * max(0, min(48, terminal_width()) - 1), "90"))
                 in_code = False
             continue
         if in_code:
@@ -256,7 +289,7 @@ def render_markdown_for_terminal(text: str) -> str:
             rendered.append(color(f"│ {stripped[2:]}", "90"))
             continue
         if stripped.startswith("- ") or stripped.startswith("* "):
-            rendered.append(f"• {stripped[2:]}")
+            rendered.append(f"  • {stripped[2:]}")
             continue
         rendered.append(line.replace("**", ""))
     return "\n".join(rendered)
@@ -281,94 +314,38 @@ def format_command_suggestions(prefix: str, selected_index: int) -> list[str]:
     return lines
 
 
-def _read_prompt_windows() -> str:
-    import msvcrt
-
-    buffer: list[str] = []
-    selected_index = 0
-
-    def current_text() -> str:
-        return "".join(buffer)
-
-    def current_matches() -> list[CommandInfo]:
-        text = current_text()
-        if not text.startswith("/"):
-            return []
-        matched = [command for command in COMMANDS if command.name.startswith(text)]
-        if text == "/":
-            matched = COMMANDS
-        return matched
-
-    def render() -> None:
-        text = current_text()
-        suggestions = format_command_suggestions(text, selected_index) if text.startswith("/") else []
-        sys.stdout.write("\r\033[J")
-        sys.stdout.write(color(PROMPT, "36;1") + text)
-        if suggestions:
-            sys.stdout.write("\n" + "\n".join(suggestions))
-            sys.stdout.write(f"\033[{len(suggestions)}A")
-            sys.stdout.write("\r\033[2K" + color(PROMPT, "36;1") + text)
-        sys.stdout.flush()
-
-    sys.stdout.write(color(PROMPT, "36;1"))
-    sys.stdout.flush()
-
-    while True:
-        ch = msvcrt.getwch()
-        if ch in ("\r", "\n"):
-            matches = current_matches()
-            if matches and current_text().startswith("/"):
-                buffer[:] = list(matches[selected_index % len(matches)].name)
-            sys.stdout.write("\r\033[J")
-            sys.stdout.write(color(PROMPT, "36;1") + current_text() + "\n")
-            sys.stdout.flush()
-            return current_text()
-        if ch == "\x03":
-            raise KeyboardInterrupt
-        if ch == "\t":
-            matches = current_matches()
-            if matches:
-                buffer[:] = list(matches[selected_index % len(matches)].name)
-                selected_index = 0
-                render()
-            continue
-        if ch == "\x08":
-            if buffer:
-                buffer.pop()
-                selected_index = 0
-                render()
-            continue
-        if ch in ("\x00", "\xe0"):
-            key = msvcrt.getwch()
-            matches = current_matches()
-            if matches and key in ("H", "P"):
-                if key == "H":
-                    selected_index = (selected_index - 1) % len(matches)
-                else:
-                    selected_index = (selected_index + 1) % len(matches)
-                render()
-            continue
-        if ch.isprintable():
-            buffer.append(ch)
-            selected_index = 0
-            render()
-
-
 def read_prompt() -> str:
-    if os.name == "nt" and sys.stdin.isatty():
-        return _read_prompt_windows()
-    return input(color(PROMPT, "36;1"))
+    return pt_prompt(
+        ANSI(color(PROMPT, "36;1")),
+        completer=CommandCompleter(),
+        complete_while_typing=True,
+        complete_in_thread=True,
+        history=PROMPT_HISTORY,
+        auto_suggest=AutoSuggestFromHistory(),
+    )
 
 
 def read_multiline() -> str:
-    print_message_block("Multiline", "进入多行输入模式。单独一行 `.` 发送，`/cancel` 放弃。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), TuiMode.MULTILINE), accent="34")
+    print_message_block(
+        "Multiline",
+        "进入多行输入模式。单独一行 `.` 或 `/send` 发送，`/preview` 预览，`/cancel` 放弃。",
+        subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), TuiMode.MULTILINE),
+        accent="34",
+    )
     lines: list[str] = []
     while True:
         line = input("... ")
         if line == "/cancel":
             return ""
-        if line == ".":
+        if line in {".", "/send"}:
             break
+        if line == "/preview":
+            preview = "\n".join(lines).strip()
+            if not preview:
+                print_message_block("Preview", "当前多行输入为空。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Multiline"), accent="90")
+            else:
+                print_message_block("Preview", preview, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), f"{len(lines)} lines"), accent="90")
+            continue
         lines.append(line)
     return "\n".join(lines).strip()
 
@@ -384,8 +361,9 @@ def print_help() -> None:
         "/provider   查看当前 Provider",
         "",
         "Input",
-        "/paste      进入多行输入，单独一行 . 发送",
+        "/paste      进入多行输入，支持 /preview /send /cancel",
         "/exit       退出",
+        "↑/↓         回看历史输入（Windows 终端）",
         "",
         "Tasks",
         "/schedule_in 秒数 内容",
@@ -424,10 +402,10 @@ def save_reply_images(reply: AgentReply) -> list[Path]:
 
 
 async def run_thinking_indicator(stop_event: asyncio.Event) -> None:
-    frames = ["Thinking   ", "Thinking.  ", "Thinking.. ", "Thinking..."]
+    frames = ["处理中", "处理中.", "处理中..", "处理中..."]
     index = 0
     while not stop_event.is_set():
-        sys.stdout.write("\r\033[2K" + color(frames[index % len(frames)], "33;1"))
+        sys.stdout.write("\r\033[2K" + color(frames[index % len(frames)], "90"))
         sys.stdout.flush()
         index += 1
         try:
@@ -439,13 +417,14 @@ async def run_thinking_indicator(stop_event: asyncio.Event) -> None:
 
 
 def render_turn(provider: str, reply: AgentReply, saved_images: list[Path], elapsed_ms: int) -> None:
+    rule = color("─" * terminal_width(), "90")
     print()
     print(render_markdown_for_terminal(reply.text.rstrip()) if reply.text.strip() else "(empty)")
     if saved_images:
         print()
-        print(color("图片输出", "32;1"))
         for path in saved_images:
-            print(f"- {display_path(path)}")
+            print(color(f"图片输出: {display_path(path)}", "32;1"))
+    print(rule)
     print()
 
 
@@ -562,13 +541,13 @@ async def run_tui() -> None:
                     )
                 continue
             try:
+                record_input_history(prompt)
                 await submit_prompt(prompt, bot, state)
-                print_status_bar(state)
             except AgentServiceError as exc:
                 state.last_error = str(exc)
                 state.mode = TuiMode.NORMAL
                 state.is_busy = False
-                print_message_block("Error", str(exc), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), AGENT_PROVIDER.upper(), "Failure"), accent="31")
+                print(color(f"错误: {exc}", "31;1"))
             except KeyboardInterrupt:
                 print()
                 break

@@ -10,6 +10,7 @@ dependencies = [
     "croniter>=6.0.0",
     "lark-oapi>=1.4.0",
     "openai>=2.0.0",
+    "prompt-toolkit>=3.0.52",
     "python-dotenv>=1.2.1",
     "python-telegram-bot>=22.6",
     "tavily-python>=0.7",
