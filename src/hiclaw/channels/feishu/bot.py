@@ -28,7 +28,7 @@ from hiclaw.config import (
     FEISHU_SESSION_SCOPE_PREFIX,
     SHOW_TOOL_TRACE,
 )
-from hiclaw.channels.feishu.formatting import format_feishu_text
+from hiclaw.channels.feishu.formatting import markdown_to_lark_md
 from hiclaw.media.store import PhotoPayload
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
 from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory
@@ -174,11 +174,18 @@ async def download_image(client: lark.Client, message_id: str, file_key: str) ->
 
 
 async def send_text_message(client: lark.Client, chat_id: str, text: str) -> None:
-    """发送更稳定的纯文本消息，避免不同 Markdown 方言在飞书里渲染错乱。"""
+    """用飞书交互卡片发送 Markdown 渲染消息。"""
 
-    formatted = format_feishu_text(text)
+    formatted = markdown_to_lark_md(text)
     if not formatted:
         return
+
+    card = {
+        "config": {"wide_screen_mode": True},
+        "elements": [
+            {"tag": "markdown", "content": formatted},
+        ],
+    }
 
     request = (
         CreateMessageRequest.builder()
@@ -186,8 +193,8 @@ async def send_text_message(client: lark.Client, chat_id: str, text: str) -> Non
         .request_body(
             CreateMessageRequestBody.builder()
             .receive_id(chat_id)
-            .msg_type("text")
-            .content(json.dumps({"text": formatted}, ensure_ascii=False))
+            .msg_type("interactive")
+            .content(json.dumps(card, ensure_ascii=False))
             .build()
         )
         .build()
