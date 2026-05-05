@@ -17,11 +17,13 @@ class BackgroundSchedulerRuntime:
     scheduler: Any
     loop: asyncio.AbstractEventLoop
     thread: threading.Thread
+    _stopped: threading.Event
 
 
 def start_background_scheduler(router: DeliveryRouter) -> BackgroundSchedulerRuntime:
     # App mode owns a dedicated scheduler loop thread so channel event loops stay independent.
     ready = threading.Event()
+    stopped = threading.Event()
     state: dict[str, object] = {}
     startup_error: list[BaseException] = []
 
@@ -38,12 +40,20 @@ def start_background_scheduler(router: DeliveryRouter) -> BackgroundSchedulerRun
             loop.close()
             return
 
+        async def _watch_stop() -> None:
+            while not stopped.is_set():
+                await asyncio.sleep(0.3)
+            loop.stop()
+
+        loop.create_task(_watch_stop())
+
         state["loop"] = loop
         state["scheduler"] = scheduler
         ready.set()
         logger.info("Scheduler loop started in background thread")
         loop.run_forever()
         logger.info("Scheduler loop stopping")
+        scheduler.shutdown(wait=False)
         loop.close()
 
     thread = threading.Thread(target=run_scheduler_loop, daemon=True, name="hiclaw-scheduler")
@@ -56,15 +66,12 @@ def start_background_scheduler(router: DeliveryRouter) -> BackgroundSchedulerRun
         scheduler=state["scheduler"],
         loop=state["loop"],
         thread=thread,
+        _stopped=stopped,
     )
 
 
 def stop_background_scheduler(runtime: BackgroundSchedulerRuntime) -> None:
-    def shutdown_scheduler() -> None:
-        runtime.scheduler.shutdown(wait=False)
-        runtime.loop.stop()
-
-    if runtime.loop.is_running():
-        runtime.loop.call_soon_threadsafe(shutdown_scheduler)
-    runtime.thread.join(timeout=5)
-    logger.info("Scheduler runtime stopped")
+    runtime._stopped.set()
+    runtime.thread.join(timeout=3)
+    if runtime.thread.is_alive():
+        logger.warning("Scheduler thread did not exit promptly, continuing shutdown")

@@ -11,6 +11,9 @@ from tavily import TavilyClient
 
 from hiclaw.config import TAVILY_API_KEY, TAVILY_MAX_RESULTS, TAVILY_SEARCH_DEPTH, WORKSPACE_DIR
 from hiclaw.core.delivery import MessageSender, send_sender_text
+from hiclaw.core.types import ConversationRef
+from hiclaw.tasks.service import create_scheduled_task
+from hiclaw.tasks.repository import list_scheduled_task_records, cancel_scheduled_task_record
 
 
 def resolve_workspace_path(relative_path: str) -> Path:
@@ -128,7 +131,31 @@ async def web_search(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_mcp_server(sender: MessageSender, target_id: str | int, uploaded_image: Any | None = None):
+def parse_tool_datetime(value: str) -> datetime:
+    text = value.strip()
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        parsed = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    if parsed.tzinfo is None:
+        return parsed.astimezone()
+    return parsed
+
+
+def build_task_display_text(prompt: str) -> str:
+    normalized = prompt.strip()
+    if "任务内容：" in normalized:
+        normalized = normalized.split("任务内容：", maxsplit=1)[-1].strip()
+    return normalized or prompt.strip()
+
+
+def build_mcp_server(
+    sender: MessageSender,
+    target_id: str | int,
+    uploaded_image: Any | None = None,
+    channel: str | None = None,
+    session_scope: str | None = None,
+):
     """构造当前会话可用的 MCP 工具集合。"""
 
     @tool("send_message", "向当前会话额外发送一条消息。", {"text": str})
@@ -166,12 +193,115 @@ def build_mcp_server(sender: MessageSender, target_id: str | int, uploaded_image
             ]
         }
 
+    @tool("list_tasks", "列出当前会话渠道（channel）下所有待执行的定时任务，优先用序号、时间和内容展示；如需取消可结合内部 ID 使用。", {})
+    async def list_tasks(_: dict[str, Any]) -> dict[str, Any]:
+        if not channel:
+            return {
+                "content": [{"type": "text", "text": "Error: Channel context is missing. Cannot list tasks."}],
+                "is_error": True,
+            }
+        try:
+            tasks = await list_scheduled_task_records(channel=channel, target_id=str(target_id))
+        except Exception as exc:
+            return {
+                "content": [{"type": "text", "text": f"Failed to list tasks: {exc}"}],
+                "is_error": True,
+            }
+
+        if not tasks:
+            return {
+                "content": [{"type": "text", "text": "No scheduled tasks found for this conversation."}],
+            }
+
+        lines = [f"Scheduled tasks for this conversation (channel: {channel}):"]
+        for index, task in enumerate(tasks, 1):
+            task_id = task.get("id", "unknown")
+            prompt = build_task_display_text(task.get("prompt", "unknown"))
+            next_run = task.get("next_run", "unknown")
+            schedule_type = task.get("schedule_type", "once")
+            lines.append(f"{index}. {next_run} | {schedule_type} | {prompt}")
+            lines.append(f"   Internal ID: {task_id}")
+            lines.append("")
+
+        return {
+            "content": [{"type": "text", "text": "\n".join(lines)}],
+        }
+
+    @tool("cancel_task", "取消当前会话渠道（channel）下指定 ID 的定时任务。", {"task_id": str})
+    async def cancel_task(args: dict[str, Any]) -> dict[str, Any]:
+        if not channel:
+            return {
+                "content": [{"type": "text", "text": "Error: Channel context is missing. Cannot cancel task."}],
+                "is_error": True,
+            }
+        task_id = args["task_id"]
+        try:
+            success = await cancel_scheduled_task_record(task_id, channel=channel, target_id=str(target_id))
+        except Exception as exc:
+            return {
+                "content": [{"type": "text", "text": f"Failed to cancel task: {exc}"}],
+                "is_error": True,
+            }
+
+        if success:
+            return {
+                "content": [{"type": "text", "text": f"Task {task_id} has been cancelled successfully."}],
+            }
+        return {
+            "content": [{"type": "text", "text": f"Task {task_id} not found or already cancelled."}],
+            "is_error": True,
+        }
+
+    @tool(
+        "create_task",
+        "为当前会话创建一条单次定时任务。run_at 支持 ISO 时间或 'YYYY-MM-DD HH:MM:SS' 本地时间。",
+        {"prompt": str, "run_at": str},
+    )
+    async def create_task(args: dict[str, Any]) -> dict[str, Any]:
+        if not channel or not session_scope:
+            return {
+                "content": [{"type": "text", "text": "Error: Conversation context is missing. Cannot create task."}],
+                "is_error": True,
+            }
+        prompt = args["prompt"].strip()
+        if not prompt:
+            return {
+                "content": [{"type": "text", "text": "Error: prompt cannot be empty."}],
+                "is_error": True,
+            }
+        try:
+            run_at = parse_tool_datetime(args["run_at"])
+        except ValueError as exc:
+            return {
+                "content": [{"type": "text", "text": f"Invalid run_at: {exc}"}],
+                "is_error": True,
+            }
+
+        conversation = ConversationRef(
+            channel=channel,
+            target_id=str(target_id),
+            session_scope=session_scope,
+        )
+        task_id = await create_scheduled_task(conversation=conversation, prompt=prompt, run_at=run_at)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Task created successfully. ID: {task_id}, run_at: {run_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')}, prompt: {prompt}",
+                }
+            ]
+        }
+
     tools = [
         get_current_time,
         list_workspace_files,
         read_workspace_file,
         send_message,
+        get_uploaded_image,
         web_search,
+        list_tasks,
+        cancel_task,
+        create_task,
     ]
     if uploaded_image is not None:
         tools.append(get_uploaded_image)

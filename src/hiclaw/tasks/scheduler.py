@@ -11,7 +11,7 @@ from hiclaw.config import SCHEDULER_INTERVAL_SECONDS
 from hiclaw.core.delivery import DeliveryRouter
 from hiclaw.memory.store import archive_old_memories, auto_promote_candidates, clean_old_conversations, meditate_and_organize_memories
 from hiclaw.core.types import ConversationRef
-from hiclaw.tasks.repository import claim_scheduled_task_record, list_due_task_record_ids, release_claimed_task_record, update_task_record_after_run
+from hiclaw.tasks.repository import claim_scheduled_task_record, list_due_task_record_ids, release_claimed_task_record, update_task_record_after_run, hard_cancel_task_record
 
 logger = logging.getLogger(__name__)
 
@@ -94,29 +94,88 @@ def format_schedule_description(schedule_type: str, schedule_value: str | None) 
     return schedule_type
 
 
+def parse_chinese_number(text: str) -> int | None:
+    text = text.strip()
+    if not text:
+        return None
+    if text.endswith("个"):
+        text = text[:-1]
+    if text.isdigit():
+        return int(text)
+
+    digit_map = {
+        "零": 0,
+        "一": 1,
+        "二": 2,
+        "两": 2,
+        "俩": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+    }
+    if text == "十":
+        return 10
+    if text.startswith("十"):
+        suffix = digit_map.get(text[1:], 0)
+        return 10 + suffix
+    if text.endswith("十"):
+        prefix = digit_map.get(text[:-1])
+        if prefix is None:
+            return None
+        return prefix * 10
+    if "十" in text:
+        left, right = text.split("十", maxsplit=1)
+        left_num = digit_map.get(left)
+        right_num = digit_map.get(right)
+        if left_num is None or right_num is None:
+            return None
+        return left_num * 10 + right_num
+    return digit_map.get(text)
+
+
+def parse_relative_amount(text: str, unit: str) -> timedelta | None:
+    normalized = text.strip()
+    if not normalized:
+        return None
+    if normalized in {"半", "半个"}:
+        if unit == "hour":
+            return timedelta(minutes=30)
+        if unit == "minute":
+            return timedelta(seconds=30)
+        return None
+
+    amount = parse_chinese_number(normalized)
+    if amount is None or amount <= 0:
+        return None
+    if unit == "second":
+        return timedelta(seconds=amount)
+    if unit == "minute":
+        return timedelta(minutes=amount)
+    return timedelta(hours=amount)
+
+
 def parse_relative_schedule(text: str, now: datetime) -> ParsedSchedule | None:
     patterns = [
-        r"^(?P<num>\d+)\s*秒后(?P<task>.+)$",
-        r"^(?P<num>\d+)\s*分钟后(?P<task>.+)$",
-        r"^(?P<num>\d+)\s*小时后(?P<task>.+)$",
+        (r"^(?P<num>[0-9零一二两三四五六七八九十半俩]+个?)\s*秒后(?P<task>.+)$", "second"),
+        (r"^(?P<num>[0-9零一二两三四五六七八九十半俩]+个?)\s*(?:分钟|分)后(?P<task>.+)$", "minute"),
+        (r"^(?P<num>[0-9零一二两三四五六七八九十半俩]+个?)\s*小时后(?P<task>.+)$", "hour"),
     ]
 
-    for pattern in patterns:
+    for pattern, unit in patterns:
         match = re.match(pattern, text)
         if not match:
             continue
 
-        amount = int(match.group("num"))
+        delta = parse_relative_amount(match.group("num"), unit)
         task = match.group("task").strip(" ，。,:：")
-        if not task:
+        if delta is None or not task:
             return None
 
-        if "秒后" in pattern:
-            run_at = now + timedelta(seconds=amount)
-        elif "分钟后" in pattern:
-            run_at = now + timedelta(minutes=amount)
-        else:
-            run_at = now + timedelta(hours=amount)
+        run_at = now + delta
 
         return ParsedSchedule(run_at=run_at, prompt=task, schedule_type="once", schedule_value=None)
 
@@ -289,13 +348,21 @@ async def send_task_text(router: DeliveryRouter, conversation: ConversationRef, 
 
 async def execute_scheduled_task(task: dict[str, Any], router: DeliveryRouter) -> None:
     task_id = task["id"]
+    
+    if task.get("status") == "cancelled":
+        logger.info("Task %s was cancelled before execution, skipping.", task_id)
+        await hard_cancel_task_record(task_id)
+        return
+        
     prompt = task["prompt"]
     continue_session = bool(task.get("continue_session", False))
     conversation = build_task_conversation(task)
 
     wrapped_prompt = (
         "你正在执行一条定时任务。"
-        "请根据任务要求完成回答；如果需要额外主动通知当前会话，请使用 send_message 工具。\n\n"
+        "请直接输出最终要发给用户的提醒内容本身，不要加“提醒已发送”、“定时任务执行结果”、“好的”这类系统前缀；"
+        "如果任务本身就是提醒用户做某事，就自然地提醒即可。"
+        "如果需要额外主动通知当前会话，请使用 send_message 工具。\n\n"
         f"任务内容：{prompt}"
     )
 
@@ -307,12 +374,24 @@ async def execute_scheduled_task(task: dict[str, Any], router: DeliveryRouter) -
             sender=sender,
             continue_session=continue_session,
         )
-        await send_task_text(router, conversation, f"⏰ 定时任务执行结果：\n{result.text}")
+        await send_task_text(router, conversation, result.text)
         next_run, next_status = compute_next_run_after_execution(task)
         await update_task_record_after_run(task_id, result.text, next_run, next_status)
     except RuntimeError as exc:
-        logger.exception("Scheduled task sender unavailable: %s", task_id)
-        error_text = f"定时任务未执行：通道 `{conversation.channel}` 当前不可用或未注册 sender。错误：{exc}"
+        logger.warning(
+            "Scheduled task sender unavailable, releasing back to active: id=%s channel=%s error=%s",
+            task_id,
+            conversation.channel,
+            exc,
+        )
+        await release_claimed_task_record(task_id)
+    except Exception as exc:
+        logger.exception("Scheduled task failed: %s", task_id)
+        error_text = f"\u5b9a\u65f6\u4efb\u52a1\u6267\u884c\u5931\u8d25\uff1a{exc}"
+        try:
+            await send_task_text(router, conversation, error_text)
+        except Exception:
+            logger.exception("Scheduled task error delivery failed: %s", task_id)
         await update_task_record_after_run(task_id, error_text, None, "completed")
     except Exception as exc:
         logger.exception("Scheduled task failed: %s", task_id)
@@ -329,8 +408,14 @@ async def check_due_tasks(router: DeliveryRouter) -> None:
     for task_id in due_task_ids:
         task = await claim_scheduled_task_record(task_id)
         if task is None:
-            logger.info("Skipped scheduled task claim because it was already claimed: %s", task_id)
+            logger.info("Skipped scheduled task claim because it was already claimed or cancelled: %s", task_id)
             continue
+        
+        if task.get("status") == "cancelled":
+            logger.info("Task %s was cancelled during claim, skipping.", task_id)
+            await hard_cancel_task_record(task_id)
+            continue
+            
         conversation = build_task_conversation(task)
         if not router.owns(conversation):
             logger.debug(

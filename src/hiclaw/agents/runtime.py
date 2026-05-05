@@ -24,4 +24,5 @@ async def run_agent_for_conversation(
         record_text=record_text,
         uploaded_image=uploaded_image,
         session_scope=conversation.session_scope,
+        channel=conversation.channel,
     )

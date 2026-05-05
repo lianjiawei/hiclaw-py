@@ -65,6 +65,7 @@ async def run_agent(
     record_text: str | None = None,
     uploaded_image: Any | None = None,
     session_scope: str | None = None,
+    channel: str | None = None,
 ) -> AgentReply:
     """统一 Agent 调用入口，后续可以继续扩展更多 Provider。"""
 
@@ -82,6 +83,7 @@ async def run_agent(
                 record_text=record_text,
                 uploaded_image=uploaded_image,
                 session_scope=session_scope,
+                channel=channel,
             )
             return AgentReply.from_text(text)
 

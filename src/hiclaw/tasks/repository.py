@@ -109,7 +109,14 @@ async def claim_scheduled_task_record(task_id: str) -> dict[str, Any] | None:
         )
         row = await cursor.fetchone()
         await db.commit()
-        return dict(row) if row is not None else None
+        if row is None:
+            return None
+        
+        task_data = dict(row)
+        if task_data.get("status") != "running":
+            return None
+            
+        return task_data
 
 
 async def release_claimed_task_record(task_id: str) -> None:
@@ -123,6 +130,21 @@ async def release_claimed_task_record(task_id: str) -> None:
             (task_id,),
         )
         await db.commit()
+
+
+async def hard_cancel_task_record(task_id: str) -> bool:
+    """强制取消任务，即使它正在运行。用于 scheduler 检测到任务已被取消时的清理。"""
+    async with aiosqlite.connect(TASK_DB_FILE) as db:
+        cursor = await db.execute(
+            """
+            UPDATE scheduled_tasks
+            SET status = 'cancelled'
+            WHERE id = ? AND status IN ('active', 'running')
+            """,
+            (task_id,),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def update_task_record_after_run(

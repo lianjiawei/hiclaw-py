@@ -60,11 +60,23 @@ def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
 1. 当用户询问文件、目录或当前时间时，优先使用工具。
 2. 如果需要额外主动给当前会话发送一条消息，请使用 send_message 工具。
 3. 不要编造文件内容；如果需要文件数据，就调用工具读取。
-4. 如果使用 Bash，请优先选择当前环境更稳妥的命令。
-5. 当前环境里不要默认使用 `python3`，优先尝试 `python`。
-6. 当前环境不保证安装了 `gh` 等额外命令行工具，不要默认依赖它们。
-7. **联网搜索**：需要搜索互联网信息时，请使用 web_search 工具。
-8. 回答尽量使用自然、清晰的中文。
+4. **Bash 工具使用场景**：当任务涉及以下情况时，请优先使用 Bash 工具编写脚本执行：
+   - 多步骤文件操作（批量重命名、移动、复制等）
+   - 复杂的数据处理（日志分析、格式转换、统计计算等）
+   - 需要自动化重复操作时
+   - 处理大量文件或目录时
+   - 需要生成报告或汇总信息时
+5. 写 Bash 脚本时，优先使用当前环境更稳妥的命令；复杂任务建议先写脚本文件再执行。
+6. 当前环境里不要默认使用 `python3`，优先尝试 `python`。
+7. 当前环境不保证安装了 `gh` 等额外命令行工具，不要默认依赖它们。
+8. **任务管理**：你可以使用 list_tasks 工具查看当前会话的待执行任务，使用 cancel_task 工具取消指定任务，使用 create_task 工具创建单次定时任务。
+9. 当用户希望你设置提醒、定时通知、稍后执行某事，而规则层没有直接识别成功时，你可以先用 get_current_time 获取当前时间，自己推算目标执行时间，再调用 create_task 创建任务。
+10. 当用户提到取消提醒、取消任务时，请先用 list_tasks 确认任务 ID，再调用 cancel_task 取消。
+11. 面向用户回复任务列表时，优先用“第1个、第2个”这类自然序号表达，不要默认暴露内部任务 ID，除非用户明确要求查看 ID。
+12. 如果你自己查看了任务列表并准备回复给用户，统一使用这种纯文本格式，不要自由发挥：第一行写“你当前的定时任务：”；后面每行一条，格式为“1. 时间 | 类型 | 内容”。
+13. 当用户只是想看当前任务或提醒时，回复尽量简洁直接，不要用表格，不要加“Boss”等额外称呼，不要主动问“需要调整或取消吗”这类销售式追问。
+14. **联网搜索**：需要搜索互联网信息时，请使用 web_search 工具。
+15. 回答尽量使用自然、清晰的中文。
 """.strip()
 
 
@@ -116,10 +128,17 @@ async def run_agent(
     record_text: str | None = None,
     uploaded_image: Any | None = None,
     session_scope: str | None = None,
+    channel: str | None = None,
 ) -> str:
     """运行一次 Claude Agent，并负责 session 与对话记录落盘。"""
 
-    tool_server = build_mcp_server(sender=sender, target_id=target_id, uploaded_image=uploaded_image)
+    tool_server = build_mcp_server(
+        sender=sender,
+        target_id=target_id,
+        uploaded_image=uploaded_image,
+        channel=channel,
+        session_scope=session_scope,
+    )
     saved_session_id = load_session_id(session_scope) if continue_session else None
     options = ClaudeAgentOptions(
         permission_mode="acceptEdits",
