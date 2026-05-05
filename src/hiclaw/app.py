@@ -2,11 +2,11 @@ import asyncio
 import logging
 import time
 
-from hiclaw.channel_registry import get_registered_channels, start_background_channel
-from hiclaw.delivery import DeliveryRouter
-from hiclaw.scheduler_runtime import start_background_scheduler, stop_background_scheduler
-from hiclaw.scheduler_store import init_task_db
-from hiclaw.session_store import init_session_db
+from hiclaw.channels.registry import get_registered_channels, start_background_channel
+from hiclaw.core.delivery import DeliveryRouter
+from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
+from hiclaw.tasks.store import init_task_db
+from hiclaw.memory.session import init_session_db
 
 logger = logging.getLogger(__name__)
 

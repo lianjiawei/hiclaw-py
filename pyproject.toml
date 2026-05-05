@@ -12,6 +12,7 @@ dependencies = [
     "openai>=2.0.0",
     "python-dotenv>=1.2.1",
     "python-telegram-bot>=22.6",
+    "tavily-python>=0.7",
 ]
 
 [project.optional-dependencies]
@@ -21,15 +22,26 @@ asr = [
 
 [project.scripts]
 hiclaw = "hiclaw.app:main"
-hiclaw-tui = "hiclaw.tui:main"
-hiclaw-feishu = "hiclaw.feishu_bot:main"
+hiclaw-tui = "hiclaw.channels.tui:main"
+hiclaw-feishu = "hiclaw.channels.feishu.bot:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/hiclaw"]
+packages = [
+    "src/hiclaw",
+    "src/hiclaw/core",
+    "src/hiclaw/channels",
+    "src/hiclaw/channels/telegram",
+    "src/hiclaw/channels/feishu",
+    "src/hiclaw/agents",
+    "src/hiclaw/memory",
+    "src/hiclaw/tasks",
+    "src/hiclaw/media",
+    "src/hiclaw/skills",
+]
 
 [tool.ruff]
 line-length = 180
