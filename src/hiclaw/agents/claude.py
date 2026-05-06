@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from claude_agent_sdk import (
@@ -34,8 +35,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+PROMPTS_DIR = WORKSPACE_DIR / "prompts"
+
+
 class ClaudeServiceError(Exception):
     """统一表示模型调用失败。"""
+
+
+def load_prompt_fragment(name: str) -> str | None:
+    """从 workspace/prompts/ 加载 prompt 片段，文件不存在时返回 None。"""
+    path = PROMPTS_DIR / f"{name}.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return None
 
 
 def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
@@ -45,7 +57,19 @@ def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
     selected_skills, skill_prompt = build_skill_prompt(prompt)
     selected_skill_names = ", ".join(skill.name for skill in selected_skills) or "无"
 
-    return f"""
+    system_template = load_prompt_fragment("system")
+    rules = load_prompt_fragment("rules")
+    tools_guide = load_prompt_fragment("tools")
+
+    if system_template:
+        system = system_template.format(
+            WORKSPACE_DIR=WORKSPACE_DIR,
+            CONTEXT_SNAPSHOT=context_snapshot,
+            SELECTED_SKILLS=selected_skill_names,
+            SKILL_PROMPT=skill_prompt,
+        )
+    else:
+        system = f"""
 你现在运行在一个多入口个人智能体系统中。
 当前工作区目录是：{WORKSPACE_DIR}
 
@@ -55,7 +79,9 @@ def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
 本轮命中的 skill：{selected_skill_names}
 
 {skill_prompt}
+""".strip()
 
+    rules_text = rules if rules else """
 规则：
 1. 当用户询问文件、目录或当前时间时，优先使用工具。
 2. 如果需要额外主动给当前会话发送一条消息，请使用 send_message 工具。
@@ -72,12 +98,20 @@ def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
 8. **任务管理**：你可以使用 list_tasks 工具查看当前会话的待执行任务，使用 cancel_task 工具取消指定任务，使用 create_task 工具创建单次定时任务。
 9. 当用户希望你设置提醒、定时通知、稍后执行某事，而规则层没有直接识别成功时，你可以先用 get_current_time 获取当前时间，自己推算目标执行时间，再调用 create_task 创建任务。
 10. 当用户提到取消提醒、取消任务时，请先用 list_tasks 确认任务 ID，再调用 cancel_task 取消。
-11. 面向用户回复任务列表时，优先用“第1个、第2个”这类自然序号表达，不要默认暴露内部任务 ID，除非用户明确要求查看 ID。
-12. 如果你自己查看了任务列表并准备回复给用户，统一使用这种纯文本格式，不要自由发挥：第一行写“你当前的定时任务：”；后面每行一条，格式为“1. 时间 | 类型 | 内容”。
-13. 当用户只是想看当前任务或提醒时，回复尽量简洁直接，不要用表格，不要加“Boss”等额外称呼，不要主动问“需要调整或取消吗”这类销售式追问。
+11. 面向用户回复任务列表时，优先用"第1个、第2个"这类自然序号表达，不要默认暴露内部任务 ID，除非用户明确要求查看 ID。
+12. 如果你自己查看了任务列表并准备回复给用户，统一使用这种纯文本格式，不要自由发挥：第一行写"你当前的定时任务："；后面每行一条，格式为"1. 时间 | 类型 | 内容"。
+13. 当用户只是想看当前任务或提醒时，回复尽量简洁直接，不要用表格，不要加"Boss"等额外称呼，不要主动问"需要调整或取消吗"这类销售式追问。
 14. **联网搜索**：需要搜索互联网信息时，请使用 web_search 工具。
 15. 回答尽量使用自然、清晰的中文。
 """.strip()
+
+    tools_text = tools_guide if tools_guide else ""
+
+    parts = [system, rules_text]
+    if tools_text:
+        parts.append(tools_text)
+
+    return "\n\n".join(parts)
 
 
 def build_tool_hooks(sender: MessageSender, target_id: str | int) -> dict[str, list[HookMatcher]]:

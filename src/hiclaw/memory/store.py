@@ -40,6 +40,17 @@ from hiclaw.memory.frequency import (
 
 logger = logging.getLogger(__name__)
 
+PROMPTS_DIR = WORKSPACE_DIR / "prompts"
+
+
+def _load_reflection_prompt() -> str | None:
+    """从 workspace/prompts/ 加载 reflection prompt，文件不存在时返回 None。"""
+    path = PROMPTS_DIR / "reflection.md"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return None
+
+
 LONG_TERM_FILES = {
     "profile": LONG_TERM_MEMORY_DIR / "profile.md",
     "preferences": LONG_TERM_MEMORY_DIR / "preferences.md",
@@ -1217,7 +1228,7 @@ async def reflect_and_rewrite_memories() -> dict[str, Any]:
     memories = _load_structured_memory_briefs()
     candidates = _load_candidate_briefs()
     recent_records = _read_recent_conversation_records()
-    prompt = json.dumps(
+    input_data = json.dumps(
         {
             "memories": memories[:40],
             "candidates": candidates[:20],
@@ -1227,21 +1238,24 @@ async def reflect_and_rewrite_memories() -> dict[str, Any]:
         indent=2,
     )
 
-    system_prompt = (
-        "你是 HiClaw 的夜间记忆反思器。"
-        "你的任务是识别可以重写沉淀的长期规则、应该晋升的候选记忆，以及应该归档的过期 slot。"
-        "只返回 JSON，不要解释。"
-    )
-    user_prompt = (
-        "请基于下面的输入，输出 JSON，格式为：\n"
-        "{\n"
-        '  "rewrite_memories": [{"category": "preferences|rules|profile", "slot": "...", "content": "...", "confidence": "high|medium|low", "reason": "...", "scope": "global|session|temporary", "valid_until": ""}],\n'
-        '  "promote_candidates": [{"name": "candidate.md", "category": "preferences|rules|profile|general", "slot": "..."}],\n'
-        '  "archive_slots": [{"category": "preferences|rules|profile", "slot": "...", "reason": "..."}]\n'
-        "}\n"
-        "只在你有足够把握时输出 action；没有就返回空数组。\n\n"
-        f"输入数据：\n{prompt}"
-    )
+    reflection_template = _load_reflection_prompt()
+    if reflection_template:
+        combined_prompt = reflection_template.format(INPUT_DATA=input_data)
+    else:
+        combined_prompt = (
+            "你是 HiClaw 的夜间记忆反思器。"
+            "你的任务是识别可以重写沉淀的长期规则、应该晋升的候选记忆，以及应该归档的过期 slot。"
+            "只返回 JSON，不要解释。\n\n"
+            "请基于下面的输入，输出 JSON，格式为：\n"
+            "{\n"
+            '  "rewrite_memories": [{"category": "preferences|rules|profile", "slot": "...", "content": "...", "confidence": "high|medium|low", "reason": "...", "scope": "global|session|temporary", "valid_until": ""}],\n'
+            '  "promote_candidates": [{"name": "candidate.md", "category": "preferences|rules|profile|general", "slot": "..."}],\n'
+            '  "archive_slots": [{"category": "preferences|rules|profile", "slot": "...", "reason": "..."}]\n'
+            "}\n"
+            "只在你有足够把握时输出 action；没有就返回空数组。\n\n"
+            f"输入数据：\n{input_data}"
+        )
+
     options = ClaudeAgentOptions(
         permission_mode="acceptEdits",
         env={
@@ -1252,11 +1266,11 @@ async def reflect_and_rewrite_memories() -> dict[str, Any]:
         cwd=str(WORKSPACE_DIR),
         tools=[],
         allowed_tools=[],
-        system_prompt=system_prompt,
+        system_prompt="你是 HiClaw 的夜间记忆反思器。你的任务是识别可以重写沉淀的长期规则、应该晋升的候选记忆，以及应该归档的过期 slot。只返回 JSON，不要解释。",
     )
 
     text_parts: list[str] = []
-    async for message in query(prompt=user_prompt, options=options):
+    async for message in query(prompt=combined_prompt, options=options):
         if isinstance(message, AssistantMessage):
             for block in message.content:
                 if isinstance(block, TextBlock):
