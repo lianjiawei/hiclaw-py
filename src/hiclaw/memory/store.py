@@ -765,7 +765,7 @@ def _extract_query_keywords(text: str) -> set[str]:
     return {item.lower() for item in KEYWORD_EXTRACTOR.findall(text or "") if len(item) >= 2}
 
 
-def _score_memory_entry(entry: StructuredMemoryEntry, query_keywords: set[str]) -> float:
+def _score_memory_entry(entry: StructuredMemoryEntry, query_keywords: set[str], importance_scores: dict[str, float] | None = None) -> float:
     metadata_bonus = _metadata_importance_bonus(entry.metadata)
     if entry.metadata is not None and entry.metadata.valid_until:
         try:
@@ -803,11 +803,15 @@ def _score_memory_entry(entry: StructuredMemoryEntry, query_keywords: set[str]) 
             except ValueError:
                 pass
 
+    frequency_bonus = 0.0
+    if importance_scores and entry.slot and entry.slot in importance_scores:
+        frequency_bonus = (importance_scores[entry.slot] - 1.0) * 0.3
+
     slot_bonus = 0.8 if entry.slot and any(part in query_keywords for part in _extract_query_keywords(entry.slot)) else 0.0
-    return round(overlap * 1.5 + jaccard * 2.0 + metadata_bonus + recency_bonus + slot_bonus - decay_penalty, 3)
+    return round(overlap * 1.5 + jaccard * 2.0 + metadata_bonus + recency_bonus + frequency_bonus + slot_bonus - decay_penalty, 3)
 
 
-def _render_ranked_memory_sections(category: str, title: str, path: Path, query_keywords: set[str], limit: int) -> str:
+def _render_ranked_memory_sections(category: str, title: str, path: Path, query_keywords: set[str], limit: int, importance_scores: dict[str, float] | None = None) -> str:
     if not path.exists():
         return f"## {title}\n- 暂无记录。"
     existing = path.read_text(encoding="utf-8")
@@ -817,10 +821,11 @@ def _render_ranked_memory_sections(category: str, title: str, path: Path, query_
         content = existing.strip() or "- 暂无记录。"
         return f"## {title}\n{content}"
 
-    ranked = sorted(entries, key=lambda item: _score_memory_entry(item, query_keywords), reverse=True)
-    selected = [entry for entry in ranked if _score_memory_entry(entry, query_keywords) > -900][:limit]
+    scored = [(entry, _score_memory_entry(entry, query_keywords, importance_scores)) for entry in entries]
+    ranked = sorted(scored, key=lambda x: x[1], reverse=True)
+    selected = [entry for entry, score in ranked if score > -900][:limit]
     if not selected:
-        selected = ranked[:limit]
+        selected = [entry for entry, _ in ranked[:limit]]
 
     lines = [f"## {title}"]
     for entry in selected:
@@ -828,7 +833,7 @@ def _render_ranked_memory_sections(category: str, title: str, path: Path, query_
     return "\n".join(lines)
 
 
-def _render_general_memory(query_keywords: set[str], limit: int = 4) -> str:
+def _render_general_memory(query_keywords: set[str], limit: int = 4, importance_scores: dict[str, float] | None = None) -> str:
     content = load_long_term_memory().strip()
     if not content:
         return "## 兼容长期记忆\n- 暂无记录。"
@@ -837,14 +842,69 @@ def _render_general_memory(query_keywords: set[str], limit: int = 4) -> str:
     if not entries:
         compact_lines = [line for line in content.splitlines() if line.strip()][:limit]
         return "## 兼容长期记忆\n" + "\n".join(compact_lines)
-    ranked = sorted(entries, key=lambda item: _score_memory_entry(item, query_keywords), reverse=True)
-    selected = [entry for entry in ranked if _score_memory_entry(entry, query_keywords) > -900][:limit]
+    scored = [(entry, _score_memory_entry(entry, query_keywords, importance_scores)) for entry in entries]
+    ranked = sorted(scored, key=lambda x: x[1], reverse=True)
+    selected = [entry for entry, score in ranked if score > -900][:limit]
     if not selected:
-        selected = ranked[:limit]
+        selected = [entry for entry, _ in ranked[:limit]]
     lines = ["## 兼容长期记忆"]
     for entry in selected:
         lines.append(f"- {entry.content}")
     return "\n".join(lines)
+
+
+def _render_working_state_nl(working_state: dict) -> str:
+    parts = ["## 工作记忆"]
+    if working_state.get("active_goal"):
+        parts.append(f"- 当前目标：{working_state['active_goal']}")
+    if working_state.get("active_intent_type"):
+        parts.append(f"- 当前意图类型：{working_state['active_intent_type']}")
+    tasks = working_state.get("active_tasks", [])
+    if tasks:
+        parts.append(f"- 进行中的任务（{len(tasks)}个）：")
+        for t in tasks:
+            parts.append(f"  - {t}")
+    decisions = working_state.get("recent_decisions", [])
+    if decisions:
+        parts.append(f"- 最近决策（{len(decisions)}条）：")
+        for d in decisions:
+            parts.append(f"  - {d}")
+    questions = working_state.get("open_questions", [])
+    if questions:
+        parts.append(f"- 待解决问题（{len(questions)}个）：")
+        for q in questions:
+            parts.append(f"  - {q}")
+    files = working_state.get("touched_files", [])
+    if files:
+        parts.append(f"- 最近访问文件（{len(files)}个）：")
+        for f in files:
+            parts.append(f"  - {f}")
+    if len(parts) == 1:
+        parts.append("- 暂无记录。")
+    return "\n".join(parts)
+
+
+def _render_session_summary_nl(summary: dict) -> str:
+    parts = ["## 会话摘要"]
+    if summary.get("latest_user_message"):
+        parts.append(f"- 用户最近消息：{summary['latest_user_message']}")
+    if summary.get("latest_assistant_reply_excerpt"):
+        parts.append(f"- 助手最近回复：{summary['latest_assistant_reply_excerpt']}")
+    topics = summary.get("recent_topics", [])
+    if topics:
+        parts.append(f"- 近期话题：{'、'.join(topics)}")
+    if len(parts) == 1:
+        parts.append("- 暂无记录。")
+    return "\n".join(parts)
+
+
+def _compute_importance_scores(frequency_state: dict[str, Any]) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    topic_counts = frequency_state.get("topic_counts", {})
+    for topic, count in topic_counts.items():
+        if count >= 3:
+            scores[topic] = round(1.0 + count * 0.2, 2)
+    return scores
 
 
 def build_context_snapshot(scope: str | None = None, query_text: str | None = None) -> str:
@@ -854,17 +914,19 @@ def build_context_snapshot(scope: str | None = None, query_text: str | None = No
     sections: list[str] = []
     query_keywords = _extract_query_keywords(query_text or "")
 
-    # 长期记忆按用户全局共享；工作记忆和会话摘要按 session_scope 隔离。
+    freq_state = load_frequency_state()
+    importance_scores = _compute_importance_scores(freq_state)
+
     for key, title in (
         ("profile", "用户画像"),
         ("preferences", "用户偏好"),
         ("rules", "长期规则"),
     ):
-        sections.append(_render_ranked_memory_sections(key, title, LONG_TERM_FILES[key], query_keywords, limit=4))
+        sections.append(_render_ranked_memory_sections(key, title, LONG_TERM_FILES[key], query_keywords, limit=4, importance_scores=importance_scores))
 
-    sections.append("## 工作记忆\n" + json.dumps(working_state, ensure_ascii=False, indent=2))
-    sections.append("## 会话摘要\n" + json.dumps(session_summary, ensure_ascii=False, indent=2))
-    sections.append(_render_general_memory(query_keywords, limit=4))
+    sections.append(_render_working_state_nl(working_state))
+    sections.append(_render_session_summary_nl(session_summary))
+    sections.append(_render_general_memory(query_keywords, limit=4, importance_scores=importance_scores))
     return "\n\n".join(sections).strip()
 
 
