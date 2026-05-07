@@ -156,11 +156,11 @@ def build_openai_instructions(prompt: str, session_scope: str | None = None) -> 
 
 规则：
 1. 回答尽量使用自然、清晰的中文。
-2. 本模式当前可用工具有：`get_current_time`、`web_search`、`send_message`、`list_workspace_files`、`read_workspace_file`、`list_tasks`、`cancel_task`、`create_task`。
+2. 本模式当前可用工具有：`get_current_time`、`web_search`、`send_message`、`list_workspace_files`、`read_workspace_file`、`write_workspace_file`、`edit_workspace_file`、`glob_workspace_files`、`grep_workspace_content`、`list_tasks`、`cancel_task`、`create_task`、`bash`。
 3. 当用户询问当前时间时，优先调用 `get_current_time`。
 4. 当用户需要联网搜索信息时，优先调用 `web_search`。
 5. 如果需要额外主动给当前会话发送一条消息，请调用 `send_message`。
-6. 可以使用文件查看和任务管理工具，但不要声称可以使用未暴露的工具，例如 Bash。
+6. 可以使用文件查看、编辑、任务管理和 Bash 工具。
 7. 如果工具足以回答问题，先调用工具，再基于工具结果给出最终回答。
 8. 如果工具不可用或没有必要，不要虚构工具结果。
 """.strip()
@@ -343,9 +343,8 @@ async def run_openai_image_agent(
     if not images:
         raise RuntimeError("OpenAI image service returned no image data.")
 
-    text = "图片已生成。"
-    append_conversation_record(record_text or prompt, text, None, session_scope)
-    return AgentReply(text=text, images=images)
+    append_conversation_record(record_text or prompt, "[生成了一张图片]", None, session_scope)
+    return AgentReply(text="", images=images)
 
 
 async def run_openai_agent(

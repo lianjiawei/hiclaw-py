@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
 from tavily import TavilyClient
 
-from hiclaw.config import TAVILY_API_KEY, TAVILY_MAX_RESULTS, TAVILY_SEARCH_DEPTH, WORKSPACE_DIR
+from hiclaw.config import OPENAI_ALLOWED_TOOLS, TAVILY_API_KEY, TAVILY_MAX_RESULTS, TAVILY_SEARCH_DEPTH, WORKSPACE_DIR
 from hiclaw.core.delivery import MessageSender, send_sender_text
 from hiclaw.core.types import ConversationRef
 from hiclaw.tasks.repository import cancel_scheduled_task_record, list_scheduled_task_records
@@ -22,7 +24,7 @@ class OpenAIToolContext:
     session_scope: str | None = None
 
 
-MINIMAL_OPENAI_TOOLS: list[dict[str, Any]] = [
+ALL_OPENAI_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
@@ -84,6 +86,83 @@ MINIMAL_OPENAI_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "write_workspace_file",
+            "description": "在工作区中写入文本文件，不存在则创建。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "工作区内的相对文件路径"},
+                    "content": {"type": "string", "description": "要写入的完整文本内容"},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_workspace_file",
+            "description": "在工作区文本文件里替换指定字符串。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "工作区内的相对文件路径"},
+                    "old_string": {"type": "string", "description": "要替换的原始字符串"},
+                    "new_string": {"type": "string", "description": "新的字符串"},
+                    "replace_all": {"type": "boolean", "description": "是否替换全部匹配，默认 false"},
+                },
+                "required": ["path", "old_string", "new_string"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "glob_workspace_files",
+            "description": "按 glob 模式查找工作区文件。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "glob 模式，例如 src/**/*.py"},
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "grep_workspace_content",
+            "description": "按正则在工作区文件内容中搜索。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "正则表达式"},
+                    "include": {"type": "string", "description": "可选 glob 文件过滤，例如 *.py"},
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "执行 PowerShell 命令，适合多步骤文件操作和自动化任务。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "要执行的 PowerShell 命令"},
+                    "workdir": {"type": "string", "description": "可选工作目录，相对于工作区"},
+                    "timeout": {"type": "integer", "description": "超时时间（秒），默认 60"},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_tasks",
             "description": "列出当前会话下所有待执行的定时任务。",
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -122,7 +201,11 @@ MINIMAL_OPENAI_TOOLS: list[dict[str, Any]] = [
 
 
 def build_openai_tools() -> list[dict[str, Any]]:
-    return [tool.copy() for tool in MINIMAL_OPENAI_TOOLS]
+    allowed = {item.strip() for item in OPENAI_ALLOWED_TOOLS.split(",") if item.strip()}
+    selected = ALL_OPENAI_TOOLS
+    if allowed:
+        selected = [tool for tool in ALL_OPENAI_TOOLS if tool.get("function", {}).get("name") in allowed]
+    return [tool.copy() for tool in selected]
 
 
 def _resolve_workspace_path(relative_path: str) -> Path:
@@ -131,6 +214,12 @@ def _resolve_workspace_path(relative_path: str) -> Path:
     if candidate != workspace_root and workspace_root not in candidate.parents:
         raise ValueError("Path is outside the allowed workspace.")
     return candidate
+
+
+def _resolve_workdir(relative_path: str | None) -> Path:
+    if not relative_path:
+        return WORKSPACE_DIR
+    return _resolve_workspace_path(relative_path)
 
 
 def _build_task_display_text(prompt: str) -> str:
@@ -206,6 +295,102 @@ async def execute_openai_tool(name: str, arguments: dict[str, Any], ctx: OpenAIT
         if not target.is_file():
             return f"不是文件：{relative_path}"
         return target.read_text(encoding="utf-8", errors="replace")
+
+    if name == "write_workspace_file":
+        relative_path = str(arguments.get("path") or "").strip()
+        content = str(arguments.get("content") or "")
+        if not relative_path:
+            return "错误：path 不能为空。"
+        try:
+            target = _resolve_workspace_path(relative_path)
+        except ValueError as exc:
+            return f"错误：{exc}"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        return f"文件已写入：{relative_path}"
+
+    if name == "edit_workspace_file":
+        relative_path = str(arguments.get("path") or "").strip()
+        old_string = str(arguments.get("old_string") or "")
+        new_string = str(arguments.get("new_string") or "")
+        replace_all = bool(arguments.get("replace_all", False))
+        if not relative_path or not old_string:
+            return "错误：path 和 old_string 不能为空。"
+        try:
+            target = _resolve_workspace_path(relative_path)
+        except ValueError as exc:
+            return f"错误：{exc}"
+        if not target.exists() or not target.is_file():
+            return f"文件不存在：{relative_path}"
+        content = target.read_text(encoding="utf-8", errors="replace")
+        if old_string not in content:
+            return "错误：未找到要替换的文本。"
+        updated = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
+        target.write_text(updated, encoding="utf-8")
+        return f"文件已更新：{relative_path}"
+
+    if name == "glob_workspace_files":
+        pattern = str(arguments.get("pattern") or "").strip()
+        if not pattern:
+            return "错误：pattern 不能为空。"
+        matches = sorted({str(path.relative_to(WORKSPACE_DIR)) for path in WORKSPACE_DIR.glob(pattern)})
+        if not matches:
+            return "没有匹配文件。"
+        return "\n".join(matches[:200])
+
+    if name == "grep_workspace_content":
+        pattern = str(arguments.get("pattern") or "").strip()
+        include = str(arguments.get("include") or "**/*").strip() or "**/*"
+        if not pattern:
+            return "错误：pattern 不能为空。"
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return f"错误：无效正则：{exc}"
+        matches: list[str] = []
+        for path in WORKSPACE_DIR.glob(include):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for line_no, line in enumerate(text.splitlines(), 1):
+                if regex.search(line):
+                    matches.append(f"{path.relative_to(WORKSPACE_DIR)}:{line_no}: {line[:300]}")
+                    if len(matches) >= 200:
+                        return "\n".join(matches)
+        return "\n".join(matches) if matches else "没有匹配内容。"
+
+    if name == "bash":
+        command = str(arguments.get("command") or "").strip()
+        if not command:
+            return "错误：command 不能为空。"
+        timeout = int(arguments.get("timeout") or 60)
+        try:
+            workdir = _resolve_workdir(str(arguments.get("workdir") or "").strip() or None)
+        except ValueError as exc:
+            return f"错误：{exc}"
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", command],
+                cwd=str(workdir),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except subprocess.TimeoutExpired:
+            return f"错误：命令执行超时（{timeout} 秒）。"
+        output = (result.stdout or "").strip()
+        error = (result.stderr or "").strip()
+        parts = [f"退出码: {result.returncode}"]
+        if output:
+            parts.append(f"STDOUT:\n{output[:6000]}")
+        if error:
+            parts.append(f"STDERR:\n{error[:6000]}")
+        return "\n\n".join(parts)
 
     if name == "list_tasks":
         if not ctx.channel:

@@ -362,7 +362,7 @@ async def execute_scheduled_task(task: dict[str, Any], router: DeliveryRouter) -
         "你正在执行一条定时任务。"
         "请直接输出最终要发给用户的提醒内容本身，不要加“提醒已发送”、“定时任务执行结果”、“好的”这类系统前缀；"
         "如果任务本身就是提醒用户做某事，就自然地提醒即可。"
-        "如果需要额外主动通知当前会话，请使用 send_message 工具。\n\n"
+        "不要再额外调用 send_message 工具，避免重复提醒。\n\n"
         f"任务内容：{prompt}"
     )
 
