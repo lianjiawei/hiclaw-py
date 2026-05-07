@@ -9,7 +9,6 @@ from urllib.parse import urljoin
 import httpx
 
 from hiclaw.core.response import AgentImage, AgentReply
-from hiclaw.agents.claude import build_system_prompt
 from hiclaw.config import (
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
@@ -24,10 +23,14 @@ from hiclaw.config import (
     OPENAI_IMAGE_SIZE,
     OPENAI_IMAGE_TIMEOUT_SECONDS,
     OPENAI_MODEL,
+    WORKSPACE_DIR,
 )
 from hiclaw.core.delivery import MessageSender
 from hiclaw.memory.store import append_conversation_record, build_context_snapshot
 from hiclaw.core.locks import acquire_runtime_lock
+from hiclaw.skills.store import build_skill_prompt
+from hiclaw.agents.openai_stream import collect_chat_sse_response
+from hiclaw.agents.openai_tools import OpenAIToolContext, build_openai_tools, execute_openai_tool
 
 logger = logging.getLogger(__name__)
 
@@ -56,23 +59,6 @@ IMAGE_REQUEST_KEYWORDS = (
 
 class OpenAIImageRequestError(RuntimeError):
     """图片生成/编辑接口失败时，给 Telegram 展示更可读的错误原因。"""
-
-
-def build_openai_client():
-    """延迟创建 OpenAI client，避免 Claude 模式也强依赖 openai 包。"""
-
-    try:
-        from openai import AsyncOpenAI
-    except ImportError as exc:
-        raise RuntimeError("OpenAI SDK is not installed. Run: python -m pip install -e .") from exc
-
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is not configured.")
-
-    kwargs: dict[str, Any] = {"api_key": OPENAI_API_KEY}
-    if OPENAI_BASE_URL:
-        kwargs["base_url"] = OPENAI_BASE_URL
-    return AsyncOpenAI(**kwargs)
 
 
 def get_image_api_key() -> str:
@@ -149,54 +135,62 @@ def wants_image_output(prompt: str, record_text: str | None, uploaded_image: Any
     return False
 
 
-def build_openai_input(prompt: str, uploaded_image: Any | None) -> list[dict[str, Any]]:
-    """构造 Responses API 输入；图片使用 data URL，避免本地落盘。"""
-
-    content: list[dict[str, Any]] = [{"type": "input_text", "text": prompt}]
-
-    if uploaded_image is not None:
-        image_data = base64.b64encode(uploaded_image.data).decode("ascii")
-        content.append(
-            {
-                "type": "input_image",
-                "image_url": f"data:{uploaded_image.mime_type};base64,{image_data}",
-            }
-        )
-
-    return [{"role": "user", "content": content}]
-
-
 def build_openai_instructions(prompt: str, session_scope: str | None = None) -> str:
-    """复用项目记忆和 skill 上下文，并声明 OpenAI 第一版不接 Claude Code 工具。"""
+    """构造 OpenAI chat/completions 使用的系统提示。"""
 
-    context = build_context_snapshot(session_scope, prompt)
-    context_block = f"\n\n--- 当前上下文 ---\n\n{context}" if context else ""
+    context_snapshot = build_context_snapshot(session_scope, prompt)
+    selected_skills, skill_prompt = build_skill_prompt(prompt)
+    selected_skill_names = ", ".join(skill.name for skill in selected_skills) or "无"
 
-    return (
-        build_system_prompt(prompt)
-        + context_block
-        + "\n\n当前使用的是 OpenAI Provider 第一版。"
-        + "本模式支持文本、图片理解和图片生成/编辑，但不直接提供 Claude Code 内置工具、MCP 工具、"
-        + "文件读写、Bash、WebSearch 或主动发送 Telegram 消息工具。"
-        + "如果用户请求这些工具能力，请说明当前 Provider 的能力边界，"
-        + "并建议切换 AGENT_PROVIDER=claude。"
-    )
+    return f"""
+你现在运行在一个多入口个人智能体系统中。
+当前工作区目录是：{WORKSPACE_DIR}
+
+下面是当前可用的分层上下文快照：
+{context_snapshot}
+
+本轮命中的 skill：{selected_skill_names}
+
+{skill_prompt}
+
+规则：
+1. 回答尽量使用自然、清晰的中文。
+2. 本模式当前可用工具只有：`get_current_time`、`web_search`、`send_message`。
+3. 当用户询问当前时间时，优先调用 `get_current_time`。
+4. 当用户需要联网搜索信息时，优先调用 `web_search`。
+5. 如果需要额外主动给当前会话发送一条消息，请调用 `send_message`。
+6. 不要声称可以使用未暴露的工具，例如文件读写、Bash、任务管理等。
+7. 如果工具足以回答问题，先调用工具，再基于工具结果给出最终回答。
+8. 如果工具不可用或没有必要，不要虚构工具结果。
+""".strip()
 
 
-def extract_response_text(response: Any) -> str:
-    """兼容不同 OpenAI SDK 版本的文本读取方式。"""
+def build_chat_messages(prompt: str, uploaded_image: Any | None) -> list[dict[str, Any]]:
+    if uploaded_image is None:
+        return [{"role": "user", "content": prompt}]
 
-    output_text = getattr(response, "output_text", None)
-    if output_text:
-        return output_text
+    image_data = base64.b64encode(uploaded_image.data).decode("ascii")
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{uploaded_image.mime_type};base64,{image_data}"},
+                },
+            ],
+        }
+    ]
 
-    parts: list[str] = []
-    for item in getattr(response, "output", []) or []:
-        for content in getattr(item, "content", []) or []:
-            text = getattr(content, "text", None)
-            if text:
-                parts.append(text)
-    return "\n".join(parts)
+
+def build_chat_headers() -> dict[str, str]:
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+    return {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
 
 def extract_generated_images(response: Any) -> list[AgentImage]:
@@ -216,7 +210,7 @@ def extract_generated_images(response: Any) -> list[AgentImage]:
     return images
 
 
-def extract_generated_images_from_payload(payload: dict[str, Any]) -> list[AgentImage]:
+async def extract_generated_images_from_payload(payload: dict[str, Any]) -> list[AgentImage]:
     """兼容标准 OpenAI Images 响应，以及部分服务商的简化响应格式。"""
 
     data = payload.get("data")
@@ -233,6 +227,14 @@ def extract_generated_images_from_payload(payload: dict[str, Any]) -> list[Agent
             continue
         b64_json = item.get("b64_json") or item.get("base64") or item.get("image_base64")
         if not b64_json:
+            image_url = item.get("url")
+            if not image_url:
+                continue
+            async with httpx.AsyncClient(timeout=OPENAI_IMAGE_TIMEOUT_SECONDS) as client:
+                response = await client.get(str(image_url), follow_redirects=True)
+                response.raise_for_status()
+            mime_type = response.headers.get("content-type", f"image/{OPENAI_IMAGE_OUTPUT_FORMAT}").split(";", 1)[0]
+            images.append(AgentImage(data=response.content, mime_type=mime_type))
             continue
         if "," in b64_json and b64_json.lstrip().startswith("data:"):
             b64_json = b64_json.split(",", maxsplit=1)[1]
@@ -331,7 +333,7 @@ async def run_openai_image_agent(
         logger.exception("OpenAI image request failed")
         raise
 
-    images = extract_generated_images_from_payload(payload)
+    images = await extract_generated_images_from_payload(payload)
     if not images:
         raise RuntimeError("OpenAI image service returned no image data.")
 
@@ -348,29 +350,89 @@ async def run_openai_agent(
     record_text: str | None = None,
     uploaded_image: Any | None = None,
     session_scope: str | None = None,
+    channel: str | None = None,
 ) -> AgentReply:
-    """第一版 OpenAI Provider：支持文本、图片理解和图片生成/编辑。"""
+    """OpenAI Provider：使用 chat/completions + SSE + 最小工具集。"""
 
     if wants_image_output(prompt, record_text, uploaded_image):
         return await run_openai_image_agent(prompt, record_text, uploaded_image, session_scope)
 
-    client = build_openai_client()
-    request_input = build_openai_input(prompt, uploaded_image)
+    headers = build_chat_headers()
+    messages = [
+        {"role": "system", "content": build_openai_instructions(prompt, session_scope)},
+        *build_chat_messages(prompt, uploaded_image),
+    ]
+    tools = build_openai_tools()
+    tool_ctx = OpenAIToolContext(sender=sender, target_id=target_id, channel=channel, session_scope=session_scope)
 
     try:
         async with acquire_runtime_lock(session_scope, "openai"):
-            response = await client.responses.create(
-                model=OPENAI_MODEL,
-                instructions=build_openai_instructions(prompt, session_scope),
-                input=request_input,
-            )
+            async with httpx.AsyncClient(timeout=90) as client:
+                final_text = ""
+                for _ in range(3):
+                    payload = {
+                        "model": OPENAI_MODEL,
+                        "messages": messages,
+                        "stream": True,
+                        "tools": tools,
+                        "tool_choice": "auto",
+                    }
+                    if len(messages) == 2 and messages[-1].get("role") == "user":
+                        payload["temperature"] = 0.7
+
+                    async with client.stream(
+                        "POST",
+                        f"{OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    ) as response:
+                        if response.status_code != 200:
+                            error_text = await response.aread()
+                            raise RuntimeError(
+                                f"OpenAI chat/completions failed: HTTP {response.status_code} - "
+                                f"{error_text.decode('utf-8', errors='replace')[:500]}"
+                            )
+
+                        stream_result = await collect_chat_sse_response(response)
+
+                    if stream_result.tool_calls:
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": call.id,
+                                        "type": "function",
+                                        "function": {"name": call.name, "arguments": call.arguments},
+                                    }
+                                    for call in stream_result.tool_calls
+                                ],
+                            }
+                        )
+
+                        for call in stream_result.tool_calls:
+                            try:
+                                arguments = json.loads(call.arguments) if call.arguments else {}
+                            except json.JSONDecodeError:
+                                arguments = {}
+                            tool_output = await execute_openai_tool(call.name, arguments, tool_ctx)
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": call.id,
+                                    "content": tool_output,
+                                }
+                            )
+                        continue
+
+                    final_text = stream_result.text.strip()
+                    break
     except Exception:
         logger.exception("OpenAI request failed")
         raise
 
-    text = extract_response_text(response)
-    if not text.strip():
+    if not final_text:
         raise RuntimeError("OpenAI service returned an empty response.")
 
-    append_conversation_record(record_text or prompt, text, None if not continue_session else "openai", session_scope)
-    return AgentReply.from_text(text)
+    append_conversation_record(record_text or prompt, final_text, None if not continue_session else "openai", session_scope)
+    return AgentReply.from_text(final_text)

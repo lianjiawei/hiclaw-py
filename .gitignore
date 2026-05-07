@@ -29,6 +29,12 @@ workspace_course/
 # Local test scripts
 tests/
 test/
+token_sale.py
+.env.token_sale
+.env.token_sale.example
+test_image_*.png
+test_image_edit_*.png
+test_image_urls.txt
 
 # Local models can be large and machine-specific
 models/

@@ -98,6 +98,7 @@ async def run_agent(
                 record_text=record_text,
                 uploaded_image=uploaded_image,
                 session_scope=session_scope,
+                channel=channel,
             )
 
         raise AgentServiceError(f"Unsupported AGENT_PROVIDER: {AGENT_PROVIDER}")
