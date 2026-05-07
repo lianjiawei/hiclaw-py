@@ -72,6 +72,18 @@ async def run_agent(
 
     provider = normalize_provider_name()
 
+    # 自动切换策略（最小版）：
+    # 当前默认 Provider 是 Claude 时，如果本轮明显是图片生成/改图请求，
+    # 则只对这一轮临时路由到 OpenAI，不修改全局 provider 状态。
+    if provider == "claude":
+        try:
+            from hiclaw.agents.openai import wants_image_output
+
+            if wants_image_output(prompt, record_text, uploaded_image):
+                provider = "openai"
+        except Exception:
+            logger.exception("Auto-switch strategy check failed")
+
     try:
         if provider == "claude":
             from hiclaw.agents.claude import run_agent as run_claude_agent

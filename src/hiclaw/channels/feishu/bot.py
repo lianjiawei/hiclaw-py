@@ -6,10 +6,13 @@ import logging
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from typing import Any
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
+    CreateImageRequest,
+    CreateImageRequestBody,
     CreateMessageRequest,
     CreateMessageRequestBody,
     GetMessageResourceRequest,
@@ -207,12 +210,57 @@ async def send_text_message(client: lark.Client, chat_id: str, text: str) -> Non
         raise RuntimeError(f"Feishu send message failed: code={response.code}, msg={response.msg}")
 
 
+async def upload_image_message(client: lark.Client, image_data: bytes, mime_type: str) -> str:
+    """把本地图片上传到飞书，返回 image_key。"""
+
+    image_type = "message"
+    if mime_type.lower() in {"image/png", "image/x-png"}:
+        image_type = "message"
+
+    request = (
+        CreateImageRequest.builder()
+        .request_body(
+            CreateImageRequestBody.builder()
+            .image_type(image_type)
+            .image(BytesIO(image_data))
+            .build()
+        )
+        .build()
+    )
+
+    response = await client.im.v1.image.acreate(request)
+    if not response.success() or response.data is None or not response.data.image_key:
+        raise RuntimeError(f"Feishu upload image failed: code={response.code}, msg={response.msg}")
+    return response.data.image_key
+
+
+async def send_image_message(client: lark.Client, chat_id: str, image_key: str) -> None:
+    request = (
+        CreateMessageRequest.builder()
+        .receive_id_type("chat_id")
+        .request_body(
+            CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("image")
+            .content(json.dumps({"image_key": image_key}, ensure_ascii=False))
+            .build()
+        )
+        .build()
+    )
+
+    response = await client.im.v1.message.acreate(request)
+    if not response.success():
+        raise RuntimeError(f"Feishu send image message failed: code={response.code}, msg={response.msg}")
+
+
 async def reply_agent_result(client: lark.Client, chat_id: str, reply: AgentReply) -> None:
     if reply.text.strip():
         await send_text_message(client, chat_id, reply.text)
 
     if reply.images:
-        await send_text_message(client, chat_id, "当前飞书第一版通道暂不支持发送图片结果，请先在 Telegram 或 TUI 通道查看图片。")
+        for image in reply.images:
+            image_key = await upload_image_message(client, image.data, image.mime_type)
+            await send_image_message(client, chat_id, image_key)
 
 
 async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -> None:
