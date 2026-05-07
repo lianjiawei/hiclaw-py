@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 from typing import Any
 from urllib.parse import urljoin
@@ -193,23 +194,6 @@ def build_chat_headers() -> dict[str, str]:
     }
 
 
-def extract_generated_images(response: Any) -> list[AgentImage]:
-    """从 Images API 返回里提取 base64 图片，保持内存传递给 Telegram。"""
-
-    images: list[AgentImage] = []
-    for item in getattr(response, "data", []) or []:
-        b64_json = getattr(item, "b64_json", None)
-        if not b64_json:
-            continue
-        images.append(
-            AgentImage(
-                data=base64.b64decode(b64_json),
-                mime_type=f"image/{OPENAI_IMAGE_OUTPUT_FORMAT}",
-            )
-        )
-    return images
-
-
 async def extract_generated_images_from_payload(payload: dict[str, Any]) -> list[AgentImage]:
     """兼容标准 OpenAI Images 响应，以及部分服务商的简化响应格式。"""
 
@@ -254,6 +238,28 @@ def build_image_file(uploaded_image: Any) -> io.BytesIO:
     image_file = io.BytesIO(uploaded_image.data)
     image_file.name = f"telegram_upload.{suffix}"
     return image_file
+
+
+async def stream_chat_completion(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+    *,
+    timeout_hint: str,
+) -> Any:
+    async with client.stream(
+        "POST",
+        f"{OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+        headers=headers,
+        json=payload,
+    ) as response:
+        if response.status_code != 200:
+            error_text = await response.aread()
+            raise RuntimeError(
+                f"OpenAI {timeout_hint} chat/completions failed: HTTP {response.status_code} - "
+                f"{error_text.decode('utf-8', errors='replace')[:500]}"
+            )
+        return await collect_chat_sse_response(response)
 
 
 async def call_image_generate_api(image_prompt: str) -> dict[str, Any]:
@@ -369,6 +375,7 @@ async def run_openai_agent(
         async with acquire_runtime_lock(session_scope, "openai"):
             async with httpx.AsyncClient(timeout=90) as client:
                 final_text = ""
+                last_stream_preview: list[str] = []
                 for _ in range(3):
                     payload = {
                         "model": OPENAI_MODEL,
@@ -380,20 +387,13 @@ async def run_openai_agent(
                     if len(messages) == 2 and messages[-1].get("role") == "user":
                         payload["temperature"] = 0.7
 
-                    async with client.stream(
-                        "POST",
-                        f"{OPENAI_BASE_URL.rstrip('/')}/chat/completions",
-                        headers=headers,
-                        json=payload,
-                    ) as response:
-                        if response.status_code != 200:
-                            error_text = await response.aread()
-                            raise RuntimeError(
-                                f"OpenAI chat/completions failed: HTTP {response.status_code} - "
-                                f"{error_text.decode('utf-8', errors='replace')[:500]}"
-                            )
-
-                        stream_result = await collect_chat_sse_response(response)
+                    stream_result = await stream_chat_completion(
+                        client,
+                        headers,
+                        payload,
+                        timeout_hint="primary",
+                    )
+                    last_stream_preview = stream_result.raw_preview
 
                     if stream_result.tool_calls:
                         messages.append(
@@ -427,6 +427,27 @@ async def run_openai_agent(
 
                     final_text = stream_result.text.strip()
                     break
+
+                if not final_text:
+                    # 某些中转在带 tools 时会返回空文本，但不报错。
+                    # 这里退化成纯文本 chat/completions 再试一次，优先保证基础问答可用。
+                    fallback_payload = {
+                        "model": OPENAI_MODEL,
+                        "messages": messages,
+                        "stream": True,
+                        "temperature": 0.7,
+                    }
+                    fallback_result = await stream_chat_completion(
+                        client,
+                        headers,
+                        fallback_payload,
+                        timeout_hint="fallback",
+                    )
+                    last_stream_preview = fallback_result.raw_preview
+                    final_text = fallback_result.text.strip()
+
+                if not final_text:
+                    logger.warning("OpenAI empty response preview: %s", last_stream_preview)
     except Exception:
         logger.exception("OpenAI request failed")
         raise
