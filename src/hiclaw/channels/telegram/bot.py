@@ -46,6 +46,7 @@ from hiclaw.memory.session import clear_session_id
 from hiclaw.skills.store import get_skill, list_skills
 from hiclaw.media.speech import SpeechRecognitionError, transcribe_voice
 from hiclaw.channels.telegram.formatting import format_telegram_text
+from hiclaw.core.provider_state import get_provider, set_provider
 
 logger = logging.getLogger(__name__)
 
@@ -113,13 +114,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     try:
+        text = update.message.text.strip()
+        lower_text = text.lower()
+        if lower_text in {"/claude", "/openai"}:
+            provider = set_provider(lower_text.removeprefix("/"))
+            await reply_plain_text(update, f"已切换到 {provider}。")
+            return
+
         if update.effective_chat is not None:
-            task_result = await handle_task_command(build_telegram_conversation(update), update.message.text)
+            task_result = await handle_task_command(build_telegram_conversation(update), text)
             if task_result.handled:
                 await reply_plain_text(update, task_result.message)
                 return
 
-        memory_intent = detect_memory_intent(update.message.text)
+        memory_intent = detect_memory_intent(text)
         if memory_intent is not None:
             if should_auto_accept_memory_intent(memory_intent):
                 target = append_structured_long_term_memory(
@@ -481,6 +489,31 @@ async def cancel_task(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await reply_plain_text(update, task_result.message)
 
 
+async def switch_provider(update: Update, context: ContextTypes.DEFAULT_TYPE, provider: str) -> None:
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+    current = set_provider(provider)
+    await reply_plain_text(update, f"已切换到 {current}。")
+
+
+async def switch_to_claude(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await switch_provider(update, context, "claude")
+
+
+async def switch_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await switch_provider(update, context, "openai")
+
+
+async def show_provider(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+    await reply_plain_text(update, f"当前 Provider: {get_provider()}")
+
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """兜底记录没有被局部 handler 处理的异常。"""
 
@@ -514,6 +547,9 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("memory_reject", reject_memory))
     app.add_handler(CommandHandler("skills", show_skills))
     app.add_handler(CommandHandler("reset", reset_session))
+    app.add_handler(CommandHandler("provider", show_provider))
+    app.add_handler(CommandHandler("claude", switch_to_claude))
+    app.add_handler(CommandHandler("openai", switch_to_openai))
     app.add_handler(CommandHandler("schedule_in", schedule_in))
     app.add_handler(CommandHandler("tasks", list_tasks))
     app.add_handler(CommandHandler("cancel", cancel_task))

@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from hiclaw.config import AGENT_PROVIDER
+from hiclaw.core.provider_state import get_provider
 from hiclaw.core.delivery import MessageSender
 from hiclaw.core.response import AgentReply
 from hiclaw.core.types import ConversationRef
@@ -20,7 +21,7 @@ class AgentServiceError(Exception):
 
 
 def normalize_provider_name() -> str:
-    return AGENT_PROVIDER.strip().lower()
+    return get_provider()
 
 
 def build_telegram_session_scope(update: "Update") -> str:
@@ -101,7 +102,7 @@ async def run_agent(
                 channel=channel,
             )
 
-        raise AgentServiceError(f"Unsupported AGENT_PROVIDER: {AGENT_PROVIDER}")
+        raise AgentServiceError(f"Unsupported AGENT_PROVIDER: {provider}")
     except AgentServiceError:
         raise
     except Exception as exc:

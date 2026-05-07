@@ -29,6 +29,7 @@ from hiclaw.config import (
     SHOW_TOOL_TRACE,
 )
 from hiclaw.channels.feishu.formatting import markdown_to_lark_md
+from hiclaw.core.provider_state import get_provider, set_provider
 from hiclaw.media.store import PhotoPayload
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
 from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, create_memory_metadata
@@ -231,6 +232,15 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
         clear_session_id(session_scope)
         clear_session_context(session_scope)
         await send_text_message(client, incoming.chat_id, "当前会话已清空，下一条消息会开启新会话。")
+        return
+
+    lower_text = incoming.text.strip().lower()
+    if lower_text in {"/claude", "/openai", "/provider"}:
+        if lower_text == "/provider":
+            await send_text_message(client, incoming.chat_id, f"当前 Provider: {get_provider()}")
+        else:
+            provider = set_provider(lower_text.removeprefix("/"))
+            await send_text_message(client, incoming.chat_id, f"已切换到 {provider}。")
         return
 
     conversation = build_feishu_conversation(incoming, build_session_scope(incoming))

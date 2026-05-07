@@ -21,7 +21,8 @@ from prompt_toolkit.styles import Style
 from hiclaw.agents.router import AgentServiceError, build_tui_conversation
 from hiclaw.agents.runtime import run_agent_for_conversation
 from hiclaw.core.response import AgentReply
-from hiclaw.config import AGENT_PROVIDER, PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
+from hiclaw.config import PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
+from hiclaw.core.provider_state import get_provider, set_provider
 from hiclaw.core.delivery import DeliveryRouter
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
 from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, clear_session_context, create_memory_metadata
@@ -72,6 +73,8 @@ COMMANDS = [
     CommandInfo("/retry", "重发上一条用户输入"),
     CommandInfo("/reset", "清空 TUI 独立连续会话"),
     CommandInfo("/provider", "查看当前 Agent Provider"),
+    CommandInfo("/claude", "切换到 Claude Provider"),
+    CommandInfo("/openai", "切换到 OpenAI Provider"),
     CommandInfo("/schedule_in", "创建单次定时任务"),
     CommandInfo("/tasks", "查看当前 TUI 定时任务"),
     CommandInfo("/cancel", "取消指定定时任务"),
@@ -218,7 +221,7 @@ def print_header() -> None:
     print(color(f"╭{rule}╮", THEME_SECONDARY))
     print(box_line_center("HiClaw TUI", width, THEME_PRIMARY_BOLD))
     print(box_line_center("Local Agent Console", width, THEME_SECONDARY))
-    print(panel_line("Provider", AGENT_PROVIDER, width, "●", THEME_PRIMARY_BOLD))
+    print(panel_line("Provider", get_provider(), width, "●", THEME_PRIMARY_BOLD))
     print(panel_line("Workspace", display_path(WORKSPACE_DIR), width, "◆", THEME_PRIMARY))
     print(panel_line("Session", display_path(session_file), width, "◦", THEME_PRIMARY))
     print(panel_line("Images", display_path(TUI_OUTPUT_DIR), width, "■", THEME_PRIMARY))
@@ -469,13 +472,13 @@ async def submit_prompt(prompt: str, bot: ConsoleBot, state: TuiState) -> None:
     state.last_latency_ms = elapsed_ms
     state.last_user_input = prompt
     state.last_image_path = display_path(saved_images[-1]) if saved_images else None
-    render_turn(AGENT_PROVIDER.upper(), reply, saved_images, elapsed_ms)
+    render_turn(get_provider().upper(), reply, saved_images, elapsed_ms)
 
 
 async def run_tui() -> None:
     configure_stdio()
     print_header()
-    state = TuiState(session_scope=get_tui_scope(), provider=AGENT_PROVIDER)
+    state = TuiState(session_scope=get_tui_scope(), provider=get_provider())
     print_status_bar(state)
     bot = ConsoleBot()
     conversation = build_tui_conversation(state.session_scope)
@@ -512,7 +515,12 @@ async def run_tui() -> None:
                     continue
                 prompt = state.last_user_input
             if command == "/provider":
-                print_message_block("Provider", f"当前 Provider: {AGENT_PROVIDER}", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent=THEME_PRIMARY)
+                state.provider = get_provider()
+                print_message_block("Provider", f"当前 Provider: {state.provider}", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent=THEME_PRIMARY)
+                continue
+            if command in {"/claude", "/openai"}:
+                state.provider = set_provider(command.removeprefix("/"))
+                print_message_block("Provider", f"已切换到 {state.provider}", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent=THEME_PRIMARY)
                 continue
             if command == "/reset":
                 clear_session_id(state.session_scope)
