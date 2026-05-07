@@ -152,10 +152,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await reply_plain_text(update, build_memory_intent_ack(memory_intent, False, SHOW_TOOL_TRACE, candidate_file.name))
             return
 
+        sender = TelegramMessageSender(update.get_bot())
         response = await run_agent_for_conversation(
             prompt=update.message.text,
             conversation=build_telegram_conversation(update),
-            sender=update.get_bot(),
+            sender=sender,
         )
         await reply_agent_result(update, response)
     except AgentServiceError as exc:
@@ -190,10 +191,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "再结合图片和用户说明进行分析，并直接给出有帮助的中文回答。"
         )
         record_text = f"用户上传了一张图片。说明：{caption_text}"
+        sender = TelegramMessageSender(update.get_bot())
         response = await run_agent_for_conversation(
             prompt=prompt,
             conversation=build_telegram_conversation(update),
-            sender=update.get_bot(),
+            sender=sender,
             record_text=record_text,
             uploaded_image=photo_payload,
         )
@@ -228,10 +230,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             f"语音转写文本：{transcript}\n\n"
             "请把这条语音转写文本当作用户的真实输入来处理。"
         )
+        sender = TelegramMessageSender(update.get_bot())
         response = await run_agent_for_conversation(
             prompt=prompt,
             conversation=build_telegram_conversation(update),
-            sender=update.get_bot(),
+            sender=sender,
         )
         await reply_agent_result(update, response)
     except SpeechRecognitionError as exc:
