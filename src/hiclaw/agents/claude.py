@@ -25,8 +25,10 @@ from hiclaw.config import (
     WORKSPACE_DIR,
 )
 from hiclaw.core.delivery import MessageSender, send_sender_text
+from hiclaw.core.agent_activity import mark_agent_tool_finished, mark_agent_tool_started
 from hiclaw.memory.store import append_conversation_record, build_context_snapshot
 from hiclaw.core.locks import acquire_runtime_lock
+from hiclaw.core.types import ConversationRef
 from hiclaw.memory.session import load_session_id, save_session_id
 from hiclaw.skills.store import build_skill_prompt
 
@@ -114,19 +116,30 @@ def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
     return "\n\n".join(parts)
 
 
-def build_tool_hooks(sender: MessageSender, target_id: str | int) -> dict[str, list[HookMatcher]]:
+def build_tool_hooks(sender: MessageSender, target_id: str | int, conversation: ConversationRef) -> dict[str, list[HookMatcher]]:
     """构造工具执行过程的当前会话状态通知。"""
 
     async def notify_tool_start(hook_input, tool_use_id, context) -> dict:
-        await send_sender_text(sender, target_id, f"[Tool Start] {hook_input['tool_name']}")
+        tool_name = str(hook_input.get("tool_name") or "tool")
+        tool_args = hook_input.get("tool_input")
+        mark_agent_tool_started(conversation, tool_name, str(tool_args or "")[:160])
+        if SHOW_TOOL_TRACE:
+            await send_sender_text(sender, target_id, f"[Tool Start] {tool_name}")
         return {}
 
     async def notify_tool_finish(hook_input, tool_use_id, context) -> dict:
-        await send_sender_text(sender, target_id, f"[Tool Done] {hook_input['tool_name']}")
+        tool_name = str(hook_input.get("tool_name") or "tool")
+        mark_agent_tool_finished(conversation, tool_name, "done")
+        if SHOW_TOOL_TRACE:
+            await send_sender_text(sender, target_id, f"[Tool Done] {tool_name}")
         return {}
 
     async def notify_tool_failure(hook_input, tool_use_id, context) -> dict:
-        await send_sender_text(sender, target_id, f"[Tool Failed] {hook_input['tool_name']}: {hook_input['error']}")
+        tool_name = str(hook_input.get("tool_name") or "tool")
+        error_text = str(hook_input.get("error") or "failed")
+        mark_agent_tool_finished(conversation, tool_name, error_text)
+        if SHOW_TOOL_TRACE:
+            await send_sender_text(sender, target_id, f"[Tool Failed] {tool_name}: {error_text}")
         return {}
 
     return {
@@ -173,6 +186,7 @@ async def run_agent(
         channel=channel,
         session_scope=session_scope,
     )
+    conversation = ConversationRef(channel=channel or "unknown", target_id=str(target_id), session_scope=session_scope or f"unknown:{target_id}")
     saved_session_id = load_session_id(session_scope) if continue_session else None
     options = ClaudeAgentOptions(
         permission_mode="acceptEdits",
@@ -186,7 +200,7 @@ async def run_agent(
         system_prompt=build_system_prompt(prompt, session_scope),
         mcp_servers={"hiclaw": tool_server},
         allowed_tools=ALLOWED_TOOLS,
-        hooks=build_tool_hooks(sender, target_id) if SHOW_TOOL_TRACE else {},
+        hooks=build_tool_hooks(sender, target_id, conversation),
         continue_conversation=continue_session and bool(saved_session_id),
         resume=saved_session_id,
     )
@@ -208,7 +222,7 @@ async def run_agent(
                     system_prompt=build_system_prompt(prompt, session_scope),
                     mcp_servers={"hiclaw": tool_server},
                     allowed_tools=ALLOWED_TOOLS,
-                    hooks=build_tool_hooks(sender, target_id) if SHOW_TOOL_TRACE else {},
+                    hooks=build_tool_hooks(sender, target_id, conversation),
                     continue_conversation=False,
                     resume=None,
                 )

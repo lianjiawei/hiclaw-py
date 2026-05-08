@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hiclaw Pixel Office V2</title>
+  <base href="/v2/">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="v2-shell">
+    <aside class="v2-sidebar">
+      <section class="v2-card v2-summary-card">
+        <div class="v2-card-head">
+          <p class="v2-label">Agent Status</p>
+          <span class="v2-status-mini"><i class="v2-status-mini-dot" id="v2StateDot"></i><span id="v2StatePill">IDLE</span></span>
+        </div>
+        <p class="v2-summary-value" id="v2StateValue">Idle</p>
+        <p class="v2-summary-copy" id="v2StateCopy">当前空闲，办公室处于轻量巡航状态。</p>
+      </section>
+
+      <section class="v2-card v2-highlight-card">
+        <p class="v2-label">Current Task</p>
+        <p class="v2-text" id="v2Task">暂无任务</p>
+      </section>
+
+      <section class="v2-card v2-highlight-card subtle">
+        <p class="v2-label">Current Tool</p>
+        <p class="v2-text" id="v2Tool">无</p>
+      </section>
+
+      <section class="v2-card v2-meta-card">
+        <p class="v2-label">Current Channel</p>
+        <p class="v2-text" id="v2Channel">-</p>
+      </section>
+
+      <section class="v2-card v2-meta-card compact">
+        <p class="v2-label">Last Active</p>
+        <p class="v2-meta-value" id="v2LastActive">-</p>
+      </section>
+
+      <section class="v2-card">
+        <div class="v2-card-head">
+          <p class="v2-label">Active Runs</p>
+          <span class="v2-run-badge" id="v2ActiveRunsBadge">0</span>
+        </div>
+        <div class="v2-run-list" id="v2RunList"></div>
+      </section>
+    </aside>
+
+    <main class="v2-main">
+      <section class="v2-office-stage">
+        <div class="v2-stage-head">
+          <div>
+            <h2>管网燃气军团数字员工办公区</h2>
+          </div>
+          <div class="v2-legend">
+            <span><i class="legend-dot idle"></i>Idle</span>
+            <span><i class="legend-dot work"></i>Working</span>
+            <span><i class="legend-dot wait"></i>Waiting</span>
+          </div>
+        </div>
+        <div class="v2-stage-frame">
+        <canvas id="officeCanvasV2" width="1280" height="760" aria-label="Pixel office v2 canvas"></canvas>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./dashboard-ui.js"></script>
+  <script src="./office-engine.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

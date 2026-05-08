@@ -4,6 +4,7 @@ import time
 
 from hiclaw.channels.registry import get_registered_channels, start_background_channel
 from hiclaw.core.delivery import DeliveryRouter
+from hiclaw.monitor.server import start_background_dashboard
 from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
 from hiclaw.tasks.store import init_task_db
 from hiclaw.memory.session import init_session_db
@@ -40,6 +41,12 @@ def main() -> None:
     print(f"Starting channels: {', '.join(channel.name for channel in available_channels)}")
 
     _bootstrap_runtime_state()
+    dashboard_thread, dashboard_url, dashboard_error = start_background_dashboard()
+    if dashboard_error:
+        print(f"Dashboard startup failed: {dashboard_error}")
+    else:
+        print(f"Dashboard: {dashboard_url}")
+
     router = DeliveryRouter()
     for channel in available_channels:
         channel.register_sender(router)

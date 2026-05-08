@@ -27,6 +27,7 @@ from hiclaw.config import (
     WORKSPACE_DIR,
 )
 from hiclaw.core.delivery import MessageSender
+from hiclaw.core.types import ConversationRef
 from hiclaw.memory.store import append_conversation_record, build_context_snapshot
 from hiclaw.core.locks import acquire_runtime_lock
 from hiclaw.skills.store import build_skill_prompt

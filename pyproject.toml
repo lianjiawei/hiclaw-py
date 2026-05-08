@@ -25,6 +25,7 @@ asr = [
 hiclaw = "hiclaw.app:main"
 hiclaw-tui = "hiclaw.channels.tui:main"
 hiclaw-feishu = "hiclaw.channels.feishu.bot:main"
+hiclaw-dashboard = "hiclaw.monitor.server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -42,6 +43,7 @@ packages = [
     "src/hiclaw/tasks",
     "src/hiclaw/media",
     "src/hiclaw/skills",
+    "src/hiclaw/monitor",
 ]
 
 [tool.ruff]

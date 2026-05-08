@@ -41,6 +41,7 @@ MEMORY_REPORTS_DIR = MEMORY_DIR / "reports"
 MEMORY_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 MEMORY_CONFLICTS_FILE = MEMORY_DIR / "conflicts.jsonl"
 WORKING_STATE_FILE = MEMORY_DIR / "working_state.json"
+MONITOR_ACTIVITY_FILE = DATA_DIR / "monitor_activity.json"
 SESSION_SUMMARIES_DIR = MEMORY_DIR / "session_summaries"
 SESSION_SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
 

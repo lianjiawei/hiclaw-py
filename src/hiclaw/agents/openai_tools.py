@@ -10,6 +10,7 @@ from typing import Any
 from tavily import TavilyClient
 
 from hiclaw.config import OPENAI_ALLOWED_TOOLS, TAVILY_API_KEY, TAVILY_MAX_RESULTS, TAVILY_SEARCH_DEPTH, WORKSPACE_DIR
+from hiclaw.core.agent_activity import mark_agent_tool_finished, mark_agent_tool_started
 from hiclaw.core.delivery import MessageSender, send_sender_text
 from hiclaw.core.types import ConversationRef
 from hiclaw.tasks.repository import cancel_scheduled_task_record, list_scheduled_task_records
@@ -22,6 +23,12 @@ class OpenAIToolContext:
     target_id: str | int
     channel: str | None = None
     session_scope: str | None = None
+
+    @property
+    def conversation(self) -> ConversationRef | None:
+        if not self.channel or not self.session_scope:
+            return None
+        return ConversationRef(channel=self.channel, target_id=str(self.target_id), session_scope=self.session_scope)
 
 
 ALL_OPENAI_TOOLS: list[dict[str, Any]] = [
@@ -241,6 +248,35 @@ def _parse_tool_datetime(value: str) -> datetime:
 
 
 async def execute_openai_tool(name: str, arguments: dict[str, Any], ctx: OpenAIToolContext) -> str:
+    conversation = ctx.conversation
+    tool_summary = ""
+    if name == "read_workspace_file":
+        tool_summary = str(arguments.get("path") or "")
+    elif name in {"write_workspace_file", "edit_workspace_file"}:
+        tool_summary = str(arguments.get("path") or "")
+    elif name in {"glob_workspace_files", "grep_workspace_content"}:
+        tool_summary = str(arguments.get("pattern") or "")
+    elif name == "bash":
+        tool_summary = str(arguments.get("command") or "")[:120]
+    elif name == "web_search":
+        tool_summary = str(arguments.get("query") or "")
+    elif name == "create_task":
+        tool_summary = str(arguments.get("prompt") or "")
+    elif name == "cancel_task":
+        tool_summary = str(arguments.get("task_id") or "")
+    if conversation is not None:
+        mark_agent_tool_started(conversation, name, tool_summary)
+
+    result = ""
+    try:
+        result = await _execute_openai_tool_inner(name, arguments, ctx)
+        return result
+    finally:
+        if conversation is not None:
+            mark_agent_tool_finished(conversation, name, result[:160] if result else "")
+
+
+async def _execute_openai_tool_inner(name: str, arguments: dict[str, Any], ctx: OpenAIToolContext) -> str:
     if name == "get_current_time":
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return f"当前时间：{now}"
