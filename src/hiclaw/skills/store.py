@@ -220,6 +220,10 @@ def get_skill(name: str) -> SkillDefinition | None:
     return _loader.get_skill(name)
 
 
+def get_body(skill: SkillDefinition) -> str:
+    return _loader.get_body(skill)
+
+
 def select_skills(prompt: str, max_skills: int = 3) -> list[SkillDefinition]:
     text = prompt.lower()
     selected: list[SkillDefinition] = []
