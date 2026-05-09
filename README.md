@@ -352,6 +352,78 @@ Starting channels: Telegram, Feishu
 
 本地开发时，按 `Ctrl + C` 可以停止机器人。
 
+### 后台运行（Linux 部署）
+
+SSH 断开后服务不会退出，三种方式按需选择：
+
+**nohup（最简单）：**
+
+```bash
+nohup hiclaw > hiclaw.log 2>&1 &
+```
+
+查看日志：
+
+```bash
+tail -f hiclaw.log
+```
+
+关闭：
+
+```bash
+pkill -f "hiclaw"
+```
+
+**tmux（推荐，可随时切回前台）：**
+
+```bash
+tmux new -s hiclaw
+hiclaw
+# 按 Ctrl+B 再按 D 断开会话
+```
+
+重新连接：
+
+```bash
+tmux attach -t hiclaw
+```
+
+关闭：在 tmux 会话内 `Ctrl+C`，或 `tmux kill-session -t hiclaw`。
+
+**systemd（最稳定，崩溃自动重启）：**
+
+```bash
+sudo tee /etc/systemd/system/hiclaw.service << 'EOF'
+[Unit]
+Description=HiClaw Agent Service
+After=network.target
+
+[Service]
+Type=simple
+User=your_user
+WorkingDirectory=/home/your_user/hiclaw-py
+Environment=PATH=/home/your_user/miniconda3/envs/hiclaw/bin:$PATH
+ExecStart=/home/your_user/miniconda3/envs/hiclaw/bin/python -m hiclaw
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now hiclaw
+```
+
+管理命令：
+
+```bash
+sudo systemctl status hiclaw     # 查看状态
+sudo systemctl restart hiclaw    # 重启
+sudo systemctl stop hiclaw       # 停止
+journalctl -u hiclaw -f          # 查看日志
+```
+
 ## PowerShell TUI 通道
 
 也可以直接在 PowerShell 里启动本地 TUI 通道，与同一个 Agent 交互：
