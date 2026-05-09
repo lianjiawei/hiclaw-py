@@ -234,43 +234,66 @@ python -c "from tavily import TavilyClient; from dotenv import load_dotenv; impo
 
 ## 语音识别配置
 
-语音识别是可选功能。不开启时，机器人仍然可以正常处理文本和图片。
+语音识别是可选功能。不开启时，机器人仍然可以正常处理文本、图片和文件。
 
-1. 安装 `ffmpeg`
+### 1. 安装 ffmpeg
 
-Windows 可以使用 winget：
+**Windows（winget）：**
 
 ```powershell
 winget install Gyan.FFmpeg
 ```
 
+**Linux（apt）：**
+
+```bash
+sudo apt update
+sudo apt install ffmpeg -y
+```
+
+**macOS（Homebrew）：**
+
+```bash
+brew install ffmpeg
+```
+
 安装后确认：
 
-```powershell
+```bash
 ffmpeg -version
 ```
 
-2. 安装 ASR 可选依赖
+### 2. 安装 ASR 可选依赖
 
-```powershell
+```bash
 python -m pip install -e ".[asr]"
 ```
 
-3. 下载 Vosk 中文模型
+### 3. 下载 Vosk 中文模型
 
-模型下载地址：
+模型下载地址：[Vosk Models](https://alphacephei.com/vosk/models)
 
-[Vosk Models](https://alphacephei.com/vosk/models)
+轻量中文模型推荐 `vosk-model-small-cn-0.22`（约 42MB）：
 
-轻量中文模型推荐：
+**Linux / macOS：**
 
-- `vosk-model-small-cn-0.22`
+```bash
+cd models
+wget https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip
+unzip vosk-model-small-cn-0.22.zip
+rm vosk-model-small-cn-0.22.zip
+cd ..
+```
 
-解压后在 `.env` 中配置：
+**Windows：**
+
+手动下载并解压到 `models/` 目录。
+
+### 4. 配置 .env
 
 ```env
 ASR_PROVIDER=vosk
-VOSK_MODEL_DIR=models\vosk-model-small-cn-0.22
+VOSK_MODEL_DIR=models/vosk-model-small-cn-0.22
 ```
 
 如果暂时不使用语音识别：
@@ -278,6 +301,14 @@ VOSK_MODEL_DIR=models\vosk-model-small-cn-0.22
 ```env
 ASR_PROVIDER=none
 ```
+
+### 5. 验证
+
+```bash
+python -c "from hiclaw.media.speech import build_speech_provider; print(build_speech_provider().name)"
+```
+
+输出 `vosk` 即配置成功。
 
 ## 启动
 
