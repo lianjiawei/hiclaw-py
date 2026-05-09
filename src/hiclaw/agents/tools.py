@@ -208,6 +208,42 @@ def build_mcp_server(
             "content": [{"type": "text", "text": f"[Skill: {skill.name} | {skill.title}]\n{body}"}],
         }
 
+    @tool("create_skill", "创建一个新的 skill。参数 name 是 skill 名称（小写字母+下划线），title 是人类可读标题，description 是简短描述，keywords 是逗号分隔的关键词，body 是 skill 的完整指令内容。", {"name": str, "title": str, "description": str, "keywords": str, "body": str})
+    async def create_skill(args: dict[str, Any]) -> dict[str, Any]:
+        import re as _re
+        name = args.get("name", "").strip()
+        title = args.get("title", "").strip()
+        description = args.get("description", "").strip()
+        keywords = args.get("keywords", "").strip()
+        body = args.get("body", "").strip()
+
+        if not name:
+            return {"content": [{"type": "text", "text": "错误：name 不能为空。"}], "is_error": True}
+        if not _re.match(r'^[a-z][a-z0-9_]*$', name):
+            return {"content": [{"type": "text", "text": "错误：name 只能包含小写字母、数字和下划线，且以小写字母开头。"}], "is_error": True}
+        if not description:
+            return {"content": [{"type": "text", "text": "错误：description 不能为空。"}], "is_error": True}
+        if not body:
+            return {"content": [{"type": "text", "text": "错误：body 不能为空。"}], "is_error": True}
+
+        from hiclaw.config import SKILLS_DIR as _SKILLS_DIR
+        target = _SKILLS_DIR / f"{name}_skill.md"
+        if target.exists():
+            return {"content": [{"type": "text", "text": f"错误：名为 '{name}' 的 skill 已存在（{target.name}）。"}], "is_error": True}
+
+        keywords_line = f"keywords: [{keywords}]" if keywords else "keywords: []"
+        frontmatter = f"---\nname: {name}\ntitle: {title or name}\ndescription: {description}\n{keywords_line}\n---\n\n"
+        content = frontmatter + body
+
+        try:
+            target.write_text(content, encoding="utf-8")
+        except Exception as exc:
+            return {"content": [{"type": "text", "text": f"错误：写入文件失败：{exc}"}], "is_error": True}
+
+        return {
+            "content": [{"type": "text", "text": f"Skill '{name}' 已创建，文件：{target.name}。下次调用时自动生效。"}],
+        }
+
     @tool("send_file", "向当前会话发送工作区中的一个文件。参数 path 是文件在工作区中的绝对或相对路径。", {"path": str})
     async def send_file(args: dict[str, Any]) -> dict[str, Any]:
         raw_path = args["path"]
@@ -377,6 +413,7 @@ def build_mcp_server(
         create_task,
         list_skills,
         read_skill,
+        create_skill,
     ]
     if uploaded_image is not None:
         tools.append(get_uploaded_image)

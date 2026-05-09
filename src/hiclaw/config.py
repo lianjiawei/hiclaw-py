@@ -123,6 +123,7 @@ ALLOWED_TOOLS = [
     "create_task",
     "list_skills",
     "read_skill",
+    "create_skill",
     "mcp__hiclaw__get_current_time",
     "mcp__hiclaw__list_workspace_files",
     "mcp__hiclaw__read_workspace_file",
@@ -135,4 +136,5 @@ ALLOWED_TOOLS = [
     "mcp__hiclaw__create_task",
     "mcp__hiclaw__list_skills",
     "mcp__hiclaw__read_skill",
+    "mcp__hiclaw__create_skill",
 ]

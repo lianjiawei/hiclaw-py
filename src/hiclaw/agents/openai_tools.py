@@ -240,6 +240,24 @@ ALL_OPENAI_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_skill",
+            "description": "创建一个新的 skill。参数 name 是 skill 名称（小写字母+下划线），title 是人类可读标题，description 是简短描述，keywords 是逗号分隔的关键词，body 是 skill 的完整指令内容。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "skill 名称，只能包含小写字母、数字和下划线"},
+                    "title": {"type": "string", "description": "人类可读的标题"},
+                    "description": {"type": "string", "description": "简短描述"},
+                    "keywords": {"type": "string", "description": "逗号分隔的关键词列表"},
+                    "body": {"type": "string", "description": "skill 的完整指令内容"},
+                },
+                "required": ["name", "title", "description", "keywords", "body"],
+            },
+        },
+    },
 ]
 
 
@@ -301,6 +319,8 @@ async def execute_openai_tool(name: str, arguments: dict[str, Any], ctx: OpenAIT
     elif name == "cancel_task":
         tool_summary = str(arguments.get("task_id") or "")
     elif name == "read_skill":
+        tool_summary = str(arguments.get("name") or "")
+    elif name == "create_skill":
         tool_summary = str(arguments.get("name") or "")
     if conversation is not None:
         mark_agent_tool_started(conversation, name, tool_summary)
@@ -553,5 +573,38 @@ async def _execute_openai_tool_inner(name: str, arguments: dict[str, Any], ctx: 
             return f"未找到名为 '{skill_name}' 的 skill。使用 list_skills 查看可用列表。"
         body = _get_body(skill)
         return f"[Skill: {skill.name} | {skill.title}]\n{body}"
+
+    if name == "create_skill":
+        import re as _re
+        name = str(arguments.get("name") or "").strip()
+        title = str(arguments.get("title") or "").strip()
+        description = str(arguments.get("description") or "").strip()
+        keywords = str(arguments.get("keywords") or "").strip()
+        body = str(arguments.get("body") or "").strip()
+
+        if not name:
+            return "错误：name 不能为空。"
+        if not _re.match(r'^[a-z][a-z0-9_]*$', name):
+            return "错误：name 只能包含小写字母、数字和下划线，且以小写字母开头。"
+        if not description:
+            return "错误：description 不能为空。"
+        if not body:
+            return "错误：body 不能为空。"
+
+        from hiclaw.config import SKILLS_DIR as _SKILLS_DIR
+        target = _SKILLS_DIR / f"{name}_skill.md"
+        if target.exists():
+            return f"错误：名为 '{name}' 的 skill 已存在（{target.name}）。"
+
+        keywords_line = f"keywords: [{keywords}]" if keywords else "keywords: []"
+        frontmatter = f"---\nname: {name}\ntitle: {title or name}\ndescription: {description}\n{keywords_line}\n---\n\n"
+        content = frontmatter + body
+
+        try:
+            target.write_text(content, encoding="utf-8")
+        except Exception as exc:
+            return f"错误：写入文件失败：{exc}"
+
+        return f"Skill '{name}' 已创建，文件：{target.name}。下次调用时自动生效。"
 
     return f"错误：未知工具 {name}。"

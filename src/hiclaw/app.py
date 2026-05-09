@@ -8,6 +8,7 @@ from hiclaw.monitor.server import start_background_dashboard
 from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
 from hiclaw.tasks.store import init_task_db
 from hiclaw.memory.session import init_session_db
+from hiclaw.skills.store import validate_skills
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,15 @@ def main() -> None:
     print(f"Starting channels: {', '.join(channel.name for channel in available_channels)}")
 
     _bootstrap_runtime_state()
+
+    issues = validate_skills()
+    if issues:
+        print("Skill validation issues:")
+        for issue in issues:
+            print(f"  {issue}")
+    else:
+        print("Skills: all valid.")
+
     dashboard_thread, dashboard_url, dashboard_error = start_background_dashboard()
     if dashboard_error:
         print(f"Dashboard startup failed: {dashboard_error}")

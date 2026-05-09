@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from hiclaw.config import SKILLS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -275,3 +278,56 @@ def build_skill_prompt(prompt: str) -> tuple[list[SkillDefinition], str]:
 
 def get_last_matched_skills() -> list[SkillDefinition]:
     return list(_last_matched_skills)
+
+
+# ---------------------------------------------------------------------------
+# Skill validation
+# ---------------------------------------------------------------------------
+
+_VALID_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*$')
+
+
+def validate_skills() -> list[str]:
+    """验证所有 skill 文件的结构完整性，返回警告/错误列表。"""
+    issues: list[str] = []
+    seen_names: dict[str, str] = {}
+
+    for file_path in _loader._scan_files():
+        rel = str(file_path.relative_to(SKILLS_DIR))
+        try:
+            raw = file_path.read_text(encoding='utf-8')
+        except Exception as exc:
+            issues.append(f"[ERROR] {rel}: 无法读取文件 ({exc})")
+            continue
+
+        fm = _parse_frontmatter(raw)
+
+        if 'name' not in fm:
+            continue
+
+        name = _loader._first_str(fm.get('name', ''), file_path.stem)
+        title = _loader._first_str(fm.get('title', ''), file_path.stem)
+        description = _loader._first_str(fm.get('description', ''), '')
+        keywords = _loader._as_tuple(fm.get('keywords', ()))
+        body = _get_body(raw)
+
+        if not name:
+            issues.append(f"[ERROR] {rel}: name 为空")
+        elif not _VALID_NAME_RE.match(name):
+            issues.append(f"[WARN] {rel}: name '{name}' 建议只用小写字母、数字和下划线")
+
+        if not description:
+            issues.append(f"[WARN] {rel}: description 为空，技能列表中将无描述")
+
+        if not body:
+            issues.append(f"[ERROR] {rel}: 技能正文为空（只有 frontmatter，没有内容）")
+
+        if name in seen_names:
+            issues.append(f"[ERROR] {rel}: name '{name}' 与 {seen_names[name]} 重复")
+        else:
+            seen_names[name] = rel
+
+        if not keywords:
+            issues.append(f"[WARN] {rel}: keywords 为空，技能将无法通过关键词自动命中")
+
+    return issues
