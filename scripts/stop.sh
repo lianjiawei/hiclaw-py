@@ -8,8 +8,29 @@ PID_FILE="$PROJECT_DIR/data/hiclaw.pid"
 cd "$PROJECT_DIR"
 
 if [ ! -f "$PID_FILE" ]; then
-    echo "No PID file found, trying pkill..."
-    pkill -f "(python -m hiclaw|bin/hiclaw)" 2>/dev/null && echo "Stopped via pkill." || echo "No running HiClaw process found."
+    echo "No PID file found, searching for process..."
+    FOUND=""
+    # 匹配两种启动方式：模块启动 (python -m hiclaw) 和脚本入口 (bin/hiclaw)
+    FOUND=$(pgrep -f "bin/hiclaw" 2>/dev/null || true)
+    if [ -z "$FOUND" ]; then
+        FOUND=$(pgrep -f "python -m hiclaw" 2>/dev/null || true)
+    fi
+    if [ -n "$FOUND" ]; then
+        for pid in $FOUND; do
+            echo "Killing PID $pid..."
+            kill "$pid" 2>/dev/null || true
+        done
+        sleep 2
+        for pid in $FOUND; do
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "PID $pid still alive, force killing..."
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        done
+        echo "Stopped."
+    else
+        echo "No running HiClaw process found."
+    fi
     exit 0
 fi
 
