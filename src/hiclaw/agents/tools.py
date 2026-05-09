@@ -173,6 +173,41 @@ def build_mcp_server(
 
     from pathlib import Path as _Path
 
+    from hiclaw.skills.store import list_skills as _list_skills, get_skill as _get_skill, get_body as _get_body
+
+    @tool("list_skills", "列出所有可用的 skill，返回名称和描述。", {})
+    async def list_skills(_: dict[str, Any]) -> dict[str, Any]:
+        skills = _list_skills()
+        if not skills:
+            return {
+                "content": [{"type": "text", "text": "当前没有可用的 skill。"}],
+            }
+        lines = ["Available skills:"]
+        for skill in skills:
+            lines.append(f"- {skill.name}: {skill.description}")
+        return {
+            "content": [{"type": "text", "text": "\n".join(lines)}],
+        }
+
+    @tool("read_skill", "读取指定 skill 的完整内容。参数 name 是 skill 的名称。", {"name": str})
+    async def read_skill(args: dict[str, Any]) -> dict[str, Any]:
+        skill_name = args.get("name", "").strip()
+        if not skill_name:
+            return {
+                "content": [{"type": "text", "text": "错误：name 不能为空。"}],
+                "is_error": True,
+            }
+        skill = _get_skill(skill_name)
+        if skill is None:
+            return {
+                "content": [{"type": "text", "text": f"未找到名为 '{skill_name}' 的 skill。使用 list_skills 查看可用列表。"}],
+                "is_error": True,
+            }
+        body = _get_body(skill)
+        return {
+            "content": [{"type": "text", "text": f"[Skill: {skill.name} | {skill.title}]\n{body}"}],
+        }
+
     @tool("send_file", "向当前会话发送工作区中的一个文件。参数 path 是文件在工作区中的绝对或相对路径。", {"path": str})
     async def send_file(args: dict[str, Any]) -> dict[str, Any]:
         raw_path = args["path"]
@@ -340,6 +375,8 @@ def build_mcp_server(
         list_tasks,
         cancel_task,
         create_task,
+        list_skills,
+        read_skill,
     ]
     if uploaded_image is not None:
         tools.append(get_uploaded_image)

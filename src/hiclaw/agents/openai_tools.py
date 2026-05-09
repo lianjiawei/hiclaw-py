@@ -218,6 +218,28 @@ ALL_OPENAI_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_skills",
+            "description": "列出所有可用的 skill，返回名称和描述。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_skill",
+            "description": "读取指定 skill 的完整内容。参数 name 是 skill 的名称。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "skill 的名称"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -278,6 +300,8 @@ async def execute_openai_tool(name: str, arguments: dict[str, Any], ctx: OpenAIT
         tool_summary = str(arguments.get("prompt") or "")
     elif name == "cancel_task":
         tool_summary = str(arguments.get("task_id") or "")
+    elif name == "read_skill":
+        tool_summary = str(arguments.get("name") or "")
     if conversation is not None:
         mark_agent_tool_started(conversation, name, tool_summary)
 
@@ -508,5 +532,26 @@ async def _execute_openai_tool_inner(name: str, arguments: dict[str, Any], ctx: 
             return f"错误：读取文件失败：{exc}"
         result = await _send_file(ctx, file_data, resolved.name)
         return result
+
+    if name == "list_skills":
+        from hiclaw.skills.store import list_skills as _list_skills
+        skills = _list_skills()
+        if not skills:
+            return "当前没有可用的 skill。"
+        lines = ["Available skills:"]
+        for skill in skills:
+            lines.append(f"- {skill.name}: {skill.description}")
+        return "\n".join(lines)
+
+    if name == "read_skill":
+        from hiclaw.skills.store import get_skill as _get_skill, get_body as _get_body
+        skill_name = str(arguments.get("name") or "").strip()
+        if not skill_name:
+            return "错误：name 不能为空。"
+        skill = _get_skill(skill_name)
+        if skill is None:
+            return f"未找到名为 '{skill_name}' 的 skill。使用 list_skills 查看可用列表。"
+        body = _get_body(skill)
+        return f"[Skill: {skill.name} | {skill.title}]\n{body}"
 
     return f"错误：未知工具 {name}。"
