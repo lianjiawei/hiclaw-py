@@ -357,6 +357,7 @@ Starting channels: Telegram, Feishu
 SSH 断开后服务不会退出。**推荐直接使用项目自带脚本**：
 
 ```bash
+chmod +x scripts/start.sh scripts/stop.sh   # 首次使用赋予执行权限
 ./scripts/start.sh    # 一键启动（nohup 方式，PID 写入 data/hiclaw.pid）
 ./scripts/stop.sh     # 一键停止
 tail -f data/hiclaw.log   # 查看日志
