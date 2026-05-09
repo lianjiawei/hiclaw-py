@@ -109,6 +109,13 @@ class SkillLoader:
             return tuple(items)
         return ()
 
+    def _cache_key(self, file_path: Path) -> str:
+        """Use relative path as cache key to avoid filename collisions across subdirectories."""
+        try:
+            return str(file_path.relative_to(self._skills_dir))
+        except ValueError:
+            return file_path.name
+
     def _load_file(self, file_path: Path) -> tuple[SkillDefinition, str] | None:
         try:
             raw = file_path.read_text(encoding='utf-8')
@@ -133,7 +140,7 @@ class SkillLoader:
             name=name,
             title=title,
             description=description,
-            file_name=file_path.name,
+            file_name=str(file_path.relative_to(self._skills_dir)),
             keywords=keywords,
             aliases=aliases,
         ), body
@@ -144,7 +151,7 @@ class SkillLoader:
         definitions: list[SkillDefinition] = []
         for file_path in self._scan_files():
             mtime = file_path.stat().st_mtime
-            key = file_path.name
+            key = self._cache_key(file_path)
             if key in self._cache and self._cache[key][0] >= mtime:
                 definitions.append(self._cache[key][1])
                 continue
@@ -158,13 +165,14 @@ class SkillLoader:
     def get_skill(self, name: str) -> SkillDefinition | None:
         normalized = name.strip().lower()
         for skill in self.get_all():
-            if normalized == skill.name.lower() or normalized in skill.aliases:
+            if normalized == skill.name.lower() or normalized in (a.lower() for a in skill.aliases):
                 return skill
         return None
 
     def get_body(self, skill: SkillDefinition) -> str:
-        if skill.file_name in self._cache:
-            return self._cache[skill.file_name][2]
+        key = self._cache_key(skill.file_path)
+        if key in self._cache:
+            return self._cache[key][2]
         raw = skill.file_path.read_text(encoding='utf-8')
         return _get_body(raw)
 
@@ -188,7 +196,7 @@ def get_skill(name: str) -> SkillDefinition | None:
     return _loader.get_skill(name)
 
 
-def select_skills(prompt: str, max_skills: int = 1) -> list[SkillDefinition]:
+def select_skills(prompt: str, max_skills: int = 3) -> list[SkillDefinition]:
     text = prompt.lower()
     selected: list[SkillDefinition] = []
 
@@ -207,6 +215,7 @@ def select_skills(prompt: str, max_skills: int = 1) -> list[SkillDefinition]:
         if skill in selected:
             continue
         score = sum(1 for keyword in skill.keywords if keyword.lower() in text)
+        score += sum(1 for alias in skill.aliases if alias.lower() in text)
         if score > 0:
             scored.append((score, skill))
 
