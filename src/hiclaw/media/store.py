@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -7,7 +8,7 @@ from uuid import uuid4
 
 from telegram import Message
 
-from hiclaw.config import UPLOAD_VOICES_DIR
+from hiclaw.config import UPLOAD_FILES_DIR, UPLOAD_MAX_FILE_SIZE_BYTES, UPLOAD_VOICES_DIR
 
 
 @dataclass(slots=True)
@@ -16,6 +17,16 @@ class PhotoPayload:
 
     data: bytes
     mime_type: str
+
+
+@dataclass(slots=True)
+class FilePayload:
+    """通用文件载荷，保存到磁盘供 Agent 读取。"""
+
+    data: bytes
+    file_name: str
+    mime_type: str
+    saved_path: Path
 
 
 def _build_upload_name(prefix: str, suffix: str) -> str:
@@ -45,3 +56,39 @@ async def save_voice_message(message: Message) -> Path:
     file_path = UPLOAD_VOICES_DIR / _build_upload_name("voice", ".ogg")
     await telegram_file.download_to_drive(custom_path=str(file_path))
     return file_path
+
+
+def save_voice_bytes(raw_data: bytes, suffix: str = ".ogg") -> Path:
+    """将语音字节保存到语音目录，返回文件路径。"""
+
+    file_path = UPLOAD_VOICES_DIR / _build_upload_name("voice", suffix)
+    file_path.write_bytes(raw_data)
+    return file_path
+
+
+def _sanitize_filename(name: str) -> str:
+    """去除路径分隔符，保留扩展名。"""
+    base = os.path.basename(name).strip() or "file"
+    return base.replace("\\", "_").replace("/", "_")
+
+
+def save_uploaded_file(raw_data: bytes, original_name: str, mime_type: str) -> FilePayload:
+    """将上传文件保存到上传目录，返回载荷。"""
+
+    if len(raw_data) > UPLOAD_MAX_FILE_SIZE_BYTES:
+        raise ValueError(
+            f"文件大小 {len(raw_data)} 字节超过限制 {UPLOAD_MAX_FILE_SIZE_BYTES} 字节"
+        )
+
+    safe_name = _sanitize_filename(original_name)
+    stem, _, ext = safe_name.rpartition(".")
+    unique_name = _build_upload_name(stem, f".{ext}" if ext else "")
+    saved_path = UPLOAD_FILES_DIR / unique_name
+    saved_path.write_bytes(raw_data)
+
+    return FilePayload(
+        data=raw_data,
+        file_name=original_name,
+        mime_type=mime_type,
+        saved_path=saved_path,
+    )

@@ -204,6 +204,20 @@ ALL_OPENAI_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_file",
+            "description": "向当前会话发送工作区中的一个文件。参数 path 是文件在工作区中的路径。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "工作区中的文件路径"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
 ]
 
 
@@ -274,6 +288,16 @@ async def execute_openai_tool(name: str, arguments: dict[str, Any], ctx: OpenAIT
     finally:
         if conversation is not None:
             mark_agent_tool_finished(conversation, name, result[:160] if result else "")
+
+
+async def _send_file(ctx: OpenAIToolContext, file_data: bytes, file_name: str) -> str:
+    try:
+        if hasattr(ctx.sender, "send_file"):
+            await ctx.sender.send_file(str(ctx.target_id), file_data, file_name)
+            return f"文件 '{file_name}' 已发送到当前会话。"
+        return "错误：当前通道不支持发送文件。"
+    except Exception as exc:
+        return f"错误：发送文件失败：{exc}"
 
 
 async def _execute_openai_tool_inner(name: str, arguments: dict[str, Any], ctx: OpenAIToolContext) -> str:
@@ -465,5 +489,24 @@ async def _execute_openai_tool_inner(name: str, arguments: dict[str, Any], ctx: 
         conversation = ConversationRef(channel=ctx.channel, target_id=str(ctx.target_id), session_scope=ctx.session_scope)
         task_id = await create_scheduled_task(conversation=conversation, prompt=prompt, run_at=run_at)
         return f"任务已创建。ID: {task_id}，执行时间: {run_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')}"
+
+    if name == "send_file":
+        raw_path = str(arguments.get("path") or "").strip()
+        if not raw_path:
+            return "错误：path 参数不能为空。"
+        file_path = Path(raw_path)
+        if not file_path.is_absolute():
+            file_path = WORKSPACE_DIR / file_path
+        resolved = file_path.resolve()
+        if not str(resolved).startswith(str(WORKSPACE_DIR.resolve())):
+            return f"错误：路径 '{raw_path}' 不在工作区内。"
+        if not resolved.is_file():
+            return f"错误：文件未找到：{raw_path}"
+        try:
+            file_data = resolved.read_bytes()
+        except Exception as exc:
+            return f"错误：读取文件失败：{exc}"
+        result = await _send_file(ctx, file_data, resolved.name)
+        return result
 
     return f"错误：未知工具 {name}。"

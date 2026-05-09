@@ -10,10 +10,15 @@ logger = logging.getLogger(__name__)
 
 class MessageSender(Protocol):
     async def send_text(self, target_id: str, text: str) -> None: ...
+    async def send_file(self, target_id: str, file_data: bytes, file_name: str) -> None: ...
 
 
 async def send_sender_text(sender: MessageSender, target_id: str | int, text: str) -> None:
     await sender.send_text(str(target_id), text)
+
+
+async def send_sender_file(sender: MessageSender, target_id: str | int, file_data: bytes, file_name: str) -> None:
+    await sender.send_file(str(target_id), file_data, file_name)
 
 
 class DeliveryRouter:

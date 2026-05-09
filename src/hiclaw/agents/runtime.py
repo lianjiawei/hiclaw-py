@@ -16,6 +16,7 @@ async def run_agent_for_conversation(
     continue_session: bool = True,
     record_text: str | None = None,
     uploaded_image: Any | None = None,
+    uploaded_file: Any | None = None,
 ) -> AgentReply:
     mark_agent_run_started(conversation, record_text or prompt)
     try:
@@ -26,6 +27,7 @@ async def run_agent_for_conversation(
             continue_session=continue_session,
             record_text=record_text,
             uploaded_image=uploaded_image,
+            uploaded_file=uploaded_file,
             session_scope=conversation.session_scope,
             channel=conversation.channel,
         )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,88 +23,176 @@ class SkillDefinition:
         return SKILLS_DIR / self.file_name
 
 
-SKILL_DEFINITIONS: tuple[SkillDefinition, ...] = (
-    SkillDefinition(
-        name="table_analysis",
-        title="表格数据分析",
-        description="读取表格、提取关键字段、校验汇总结果并给出判断。",
-        file_name="table_analysis_skill.md",
-        keywords=(
-            "表格",
-            "excel",
-            "xlsx",
-            "csv",
-            "数据",
-            "统计",
-            "汇总",
-            "合计",
-            "总和",
-            "平均",
-            "比例",
-            "校验",
-            "核对",
-            "判断",
-            "分析",
-            "提取",
-        ),
-        aliases=("table", "spreadsheet", "excel"),
-    ),
-    SkillDefinition(
-        name="automation",
-        title="自动化脚本执行",
-        description="识别多步骤或批量任务，使用 Bash 工具编写脚本自动化执行。",
-        file_name="automation_skill.md",
-        keywords=(
-            "批量",
-            "自动化",
-            "脚本",
-            "bash",
-            "命令",
-            "循环",
-            "重复",
-            "处理",
-            "转换",
-            "统计",
-            "汇总",
-            "报告",
-            "生成",
-            "文件操作",
-            "重命名",
-            "移动",
-            "复制",
-            "删除",
-            "日志",
-            "分析",
-        ),
-        aliases=("automation", "script", "bash"),
-    ),
-)
+# ---------------------------------------------------------------------------
+# Frontmatter parser
+# ---------------------------------------------------------------------------
+
+_FRONTMATTER_RE = re.compile(r'^---\s*\n(.*?)\n---', re.DOTALL)
 
 
-def list_skills() -> tuple[SkillDefinition, ...]:
-    """返回当前项目内置的 skill 定义。"""
+def _parse_frontmatter(content: str) -> dict[str, object]:
+    match = _FRONTMATTER_RE.match(content)
+    if not match:
+        return {}
 
-    return SKILL_DEFINITIONS
+    raw = match.group(1)
+    result: dict[str, object] = {}
+
+    for line in raw.split('\n'):
+        line = line.strip()
+        if not line or ':' not in line:
+            continue
+        key, _, value = line.partition(':')
+        key = key.strip()
+        value = value.strip()
+
+        if value.startswith('[') and value.endswith(']'):
+            inner = value[1:-1]
+            items = [
+                item.strip().strip("'").strip('"')
+                for item in inner.split(',')
+                if item.strip()
+            ]
+            result[key] = items
+        elif (value.startswith('"') and value.endswith('"')) or \
+             (value.startswith("'") and value.endswith("'")):
+            result[key] = value[1:-1]
+        else:
+            result[key] = value
+
+    return result
+
+
+def _get_body(content: str) -> str:
+    match = _FRONTMATTER_RE.match(content)
+    if not match:
+        return content.strip()
+    return content[match.end():].strip()
+
+
+# ---------------------------------------------------------------------------
+# Skill loader with mtime-based hot-reload cache
+# ---------------------------------------------------------------------------
+
+class SkillLoader:
+    """扫描 SKILLS_DIR 目录，自动发现 skill 定义并缓存。"""
+
+    def __init__(self, skills_dir: Path):
+        self._skills_dir = skills_dir
+        self._cache: dict[str, tuple[float, SkillDefinition, str]] = {}
+
+    # ---- internal helpers ------------------------------------------------
+
+    def _scan_files(self) -> list[Path]:
+        try:
+            return sorted(
+                [p for p in self._skills_dir.glob('**/*.md') if p.is_file()],
+                key=lambda p: p.name,
+            )
+        except OSError:
+            return []
+
+    @staticmethod
+    def _first_str(value: object, default: str = '') -> str:
+        if isinstance(value, list) and value:
+            return str(value[0])
+        if isinstance(value, str):
+            return value
+        return default
+
+    @staticmethod
+    def _as_tuple(value: object) -> tuple[str, ...]:
+        if isinstance(value, (list, tuple)):
+            return tuple(str(v) for v in value)
+        if isinstance(value, str):
+            items = [v.strip() for v in value.split(',') if v.strip()]
+            return tuple(items)
+        return ()
+
+    def _load_file(self, file_path: Path) -> tuple[SkillDefinition, str] | None:
+        try:
+            raw = file_path.read_text(encoding='utf-8')
+        except Exception:
+            return None
+
+        fm = _parse_frontmatter(raw)
+
+        # 没有 frontmatter name 的不是 skill 定义（如模板文件）
+        if 'name' not in fm:
+            return None
+
+        body = _get_body(raw)
+
+        name = self._first_str(fm.get('name', ''), file_path.stem)
+        title = self._first_str(fm.get('title', ''), file_path.stem)
+        description = self._first_str(fm.get('description', ''), '')
+        keywords = self._as_tuple(fm.get('keywords', ()))
+        aliases = self._as_tuple(fm.get('aliases', ()))
+
+        return SkillDefinition(
+            name=name,
+            title=title,
+            description=description,
+            file_name=file_path.name,
+            keywords=keywords,
+            aliases=aliases,
+        ), body
+
+    # ---- public API ------------------------------------------------------
+
+    def get_all(self) -> list[SkillDefinition]:
+        definitions: list[SkillDefinition] = []
+        for file_path in self._scan_files():
+            mtime = file_path.stat().st_mtime
+            key = file_path.name
+            if key in self._cache and self._cache[key][0] >= mtime:
+                definitions.append(self._cache[key][1])
+                continue
+            loaded = self._load_file(file_path)
+            if loaded is not None:
+                definition, body = loaded
+                self._cache[key] = (mtime, definition, body)
+                definitions.append(definition)
+        return definitions
+
+    def get_skill(self, name: str) -> SkillDefinition | None:
+        normalized = name.strip().lower()
+        for skill in self.get_all():
+            if normalized == skill.name.lower() or normalized in skill.aliases:
+                return skill
+        return None
+
+    def get_body(self, skill: SkillDefinition) -> str:
+        if skill.file_name in self._cache:
+            return self._cache[skill.file_name][2]
+        raw = skill.file_path.read_text(encoding='utf-8')
+        return _get_body(raw)
+
+
+# ---------------------------------------------------------------------------
+# 全局单例
+# ---------------------------------------------------------------------------
+
+_loader = SkillLoader(SKILLS_DIR)
+
+
+# ---------------------------------------------------------------------------
+# 对外 API（保持原有签名不变）
+# ---------------------------------------------------------------------------
+
+def list_skills() -> list[SkillDefinition]:
+    return _loader.get_all()
 
 
 def get_skill(name: str) -> SkillDefinition | None:
-    """按名称或别名查找一个 skill。"""
-
-    normalized = name.strip().lower()
-    for skill in SKILL_DEFINITIONS:
-        if normalized == skill.name or normalized in skill.aliases:
-            return skill
-    return None
+    return _loader.get_skill(name)
 
 
 def select_skills(prompt: str, max_skills: int = 1) -> list[SkillDefinition]:
-    """根据用户问题做轻量匹配，挑选本轮需要注入的 skill。"""
-
     text = prompt.lower()
     selected: list[SkillDefinition] = []
 
-    # 支持用户用 #table_analysis 或 #table 显式点名 skill。
-    explicit_names = {part[1:] for part in text.split() if part.startswith("#")}
+    explicit_names = {part[1:] for part in text.split() if part.startswith('#')}
     for explicit_name in explicit_names:
         skill = get_skill(explicit_name)
         if skill and skill not in selected:
@@ -112,8 +201,9 @@ def select_skills(prompt: str, max_skills: int = 1) -> list[SkillDefinition]:
     if len(selected) >= max_skills:
         return selected[:max_skills]
 
+    all_skills = list_skills()
     scored: list[tuple[int, SkillDefinition]] = []
-    for skill in SKILL_DEFINITIONS:
+    for skill in all_skills:
         if skill in selected:
             continue
         score = sum(1 for keyword in skill.keywords if keyword.lower() in text)
@@ -130,17 +220,15 @@ def select_skills(prompt: str, max_skills: int = 1) -> list[SkillDefinition]:
 
 
 def build_skill_prompt(prompt: str) -> tuple[list[SkillDefinition], str]:
-    """把命中的 skill 内容整理成可以拼进 system prompt 的文本。"""
-
     selected_skills = select_skills(prompt)
     if not selected_skills:
-        return [], ""
+        return [], ''
 
-    parts: list[str] = ["下面是本轮问题匹配到的 skill，请优先遵循这份专长说明："]
+    parts: list[str] = ['下面是本轮问题匹配到的 skill，请优先遵循这份专长说明：']
     for skill in selected_skills:
         if not skill.file_path.exists():
             continue
-        content = skill.file_path.read_text(encoding="utf-8").strip()
-        parts.append(f"\n[Skill: {skill.name} | {skill.title}]\n{content}")
+        content = _loader.get_body(skill)
+        parts.append(f'\n[Skill: {skill.name} | {skill.title}]\n{content}')
 
-    return selected_skills, "\n".join(parts).strip()
+    return selected_skills, '\n'.join(parts).strip()

@@ -65,6 +65,7 @@ async def run_agent(
     continue_session: bool,
     record_text: str | None = None,
     uploaded_image: Any | None = None,
+    uploaded_file: Any | None = None,
     session_scope: str | None = None,
     channel: str | None = None,
 ) -> AgentReply:
@@ -95,6 +96,7 @@ async def run_agent(
                 continue_session=continue_session,
                 record_text=record_text,
                 uploaded_image=uploaded_image,
+                uploaded_file=uploaded_file,
                 session_scope=session_scope,
                 channel=channel,
             )
@@ -110,6 +112,7 @@ async def run_agent(
                 continue_session=continue_session,
                 record_text=record_text,
                 uploaded_image=uploaded_image,
+                uploaded_file=uploaded_file,
                 session_scope=session_scope,
                 channel=channel,
             )

@@ -11,6 +11,8 @@ from typing import Any
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
+    CreateFileRequest,
+    CreateFileRequestBody,
     CreateImageRequest,
     CreateImageRequestBody,
     CreateMessageRequest,
@@ -33,12 +35,23 @@ from hiclaw.config import (
 )
 from hiclaw.channels.feishu.formatting import markdown_to_lark_md
 from hiclaw.core.provider_state import get_provider, set_provider
-from hiclaw.media.store import PhotoPayload
+from hiclaw.media.speech import SpeechRecognitionError, transcribe_voice
+from hiclaw.media.store import FilePayload, PhotoPayload, save_uploaded_file, save_voice_bytes
+from hiclaw.config import UPLOAD_VOICES_DIR
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
-from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, create_memory_metadata
+from hiclaw.memory.store import (
+    accept_memory_candidate,
+    append_memory_candidate,
+    append_structured_long_term_memory,
+    create_memory_metadata,
+    list_memory_candidates,
+    load_long_term_memory,
+    reject_memory_candidate,
+)
 from hiclaw.memory.store import clear_session_context
 from hiclaw.tasks.service import handle_task_command
 from hiclaw.memory.session import clear_session_id
+from hiclaw.skills.store import get_skill, list_skills
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +75,9 @@ class FeishuIncomingMessage:
     chat_type: str
     text: str = ""
     image_key: str | None = None
+    file_key: str | None = None
+    file_name: str | None = None
+    voice_key: str | None = None
 
 
 @dataclass(slots=True)
@@ -73,6 +89,10 @@ class FeishuBotAdapter:
 
     async def send_message(self, chat_id: str | int, text: str) -> None:
         await self.send_text(str(chat_id), text)
+
+    async def send_file(self, chat_id: str | int, file_data: bytes, file_name: str) -> None:
+        file_key = await upload_file_message(self.client, file_data, file_name)
+        await send_file_message(self.client, str(chat_id), file_key)
 
 
 def ensure_feishu_config() -> None:
@@ -134,7 +154,7 @@ def parse_incoming_message(data: P2ImMessageReceiveV1) -> FeishuIncomingMessage 
         return None
 
     message_type = getattr(message, "message_type", "")
-    if message_type not in {"text", "image"}:
+    if message_type not in {"text", "image", "file", "audio"}:
         return None
 
     if message_type == "image":
@@ -148,6 +168,35 @@ def parse_incoming_message(data: P2ImMessageReceiveV1) -> FeishuIncomingMessage 
             sender_open_id=get_nested_attr(event, "sender.sender_id.open_id"),
             chat_type=getattr(message, "chat_type", ""),
             image_key=image_key,
+        )
+
+    if message_type == "file":
+        content = json.loads(getattr(message, "content", "{}") or "{}")
+        file_key = content.get("file_key", "")
+        file_name = content.get("file_name", "file")
+        if not file_key:
+            return None
+        return FeishuIncomingMessage(
+            message_id=getattr(message, "message_id", ""),
+            chat_id=getattr(message, "chat_id", ""),
+            sender_open_id=get_nested_attr(event, "sender.sender_id.open_id"),
+            chat_type=getattr(message, "chat_type", ""),
+            text=extract_text_content(getattr(message, "content", "")),
+            file_key=file_key,
+            file_name=file_name,
+        )
+
+    if message_type == "audio":
+        content = json.loads(getattr(message, "content", "{}") or "{}")
+        voice_key = content.get("file_key", "")
+        if not voice_key:
+            return None
+        return FeishuIncomingMessage(
+            message_id=getattr(message, "message_id", ""),
+            chat_id=getattr(message, "chat_id", ""),
+            sender_open_id=get_nested_attr(event, "sender.sender_id.open_id"),
+            chat_type=getattr(message, "chat_type", ""),
+            voice_key=voice_key,
         )
 
     return FeishuIncomingMessage(
@@ -176,6 +225,25 @@ async def download_image(client: lark.Client, message_id: str, file_key: str) ->
     raw_content = getattr(raw, "content", b"") if raw else b""
     detail = raw_content.decode("utf-8", errors="replace") if raw_content else ""
     raise RuntimeError(f"Feishu image download failed: code={response.code}, msg={response.msg}, detail={detail}")
+
+
+async def download_file(client: lark.Client, message_id: str, file_key: str) -> bytes:
+    """把飞书文件下载到内存。"""
+
+    request = (
+        GetMessageResourceRequest.builder()
+        .message_id(message_id)
+        .file_key(file_key)
+        .type("file")
+        .build()
+    )
+    response = await client.im.v1.message_resource.aget(request)
+    if response.file is not None:
+        return response.file.read()
+    raw = getattr(response, "raw", None)
+    raw_content = getattr(raw, "content", b"") if raw else b""
+    detail = raw_content.decode("utf-8", errors="replace") if raw_content else ""
+    raise RuntimeError(f"Feishu file download failed: code={response.code}, msg={response.msg}, detail={detail}")
 
 
 async def send_text_message(client: lark.Client, chat_id: str, text: str) -> None:
@@ -253,6 +321,50 @@ async def send_image_message(client: lark.Client, chat_id: str, image_key: str) 
         raise RuntimeError(f"Feishu send image message failed: code={response.code}, msg={response.msg}")
 
 
+async def upload_file_message(client: lark.Client, file_data: bytes, file_name: str) -> str:
+    """把本地文件上传到飞书，返回 file_key。"""
+
+    import mimetypes
+    mime_type, _ = mimetypes.guess_type(file_name)
+    mime_type = mime_type or "application/octet-stream"
+
+    request = (
+        CreateFileRequest.builder()
+        .request_body(
+            CreateFileRequestBody.builder()
+            .file_name(file_name)
+            .file(BytesIO(file_data))
+            .file_type(mime_type)
+            .build()
+        )
+        .build()
+    )
+
+    response = await client.im.v1.file.acreate(request)
+    if not response.success() or response.data is None or not response.data.file_key:
+        raise RuntimeError(f"Feishu upload file failed: code={response.code}, msg={response.msg}")
+    return response.data.file_key
+
+
+async def send_file_message(client: lark.Client, chat_id: str, file_key: str) -> None:
+    request = (
+        CreateMessageRequest.builder()
+        .receive_id_type("chat_id")
+        .request_body(
+            CreateMessageRequestBody.builder()
+            .receive_id(chat_id)
+            .msg_type("file")
+            .content(json.dumps({"file_key": file_key}, ensure_ascii=False))
+            .build()
+        )
+        .build()
+    )
+
+    response = await client.im.v1.message.acreate(request)
+    if not response.success():
+        raise RuntimeError(f"Feishu send file message failed: code={response.code}, msg={response.msg}")
+
+
 async def reply_agent_result(client: lark.Client, chat_id: str, reply: AgentReply) -> None:
     if reply.text.strip():
         await send_text_message(client, chat_id, reply.text)
@@ -262,13 +374,18 @@ async def reply_agent_result(client: lark.Client, chat_id: str, reply: AgentRepl
             image_key = await upload_image_message(client, image.data, image.mime_type)
             await send_image_message(client, chat_id, image_key)
 
+    if reply.files:
+        for f in reply.files:
+            file_key = await upload_file_message(client, f.data, f.file_name)
+            await send_file_message(client, chat_id, file_key)
+
 
 async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -> None:
     if is_duplicate(incoming.message_id):
         logger.info("Skip duplicate Feishu message: %s", incoming.message_id)
         return
 
-    if not incoming.text and not incoming.image_key:
+    if not incoming.text and not incoming.image_key and not incoming.file_key and not incoming.voice_key:
         return
 
     if not is_allowed_message(incoming):
@@ -291,6 +408,92 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
             await send_text_message(client, incoming.chat_id, f"已切换到 {provider}。")
         return
 
+    if lower_text == "/start":
+        await send_text_message(client, incoming.chat_id,
+            "你好，我是你的机器人。\n\n"
+            "我可以回答问题、处理文字、图片和文件消息，使用模型内置工具，操作工作区，并继续之前保存的会话。\n"
+            "支持定时任务、长期记忆管理和自定义技能。\n"
+            "使用 /skills 查看可用技能，/memory 查看长期记忆，/reset 清空当前会话。"
+        )
+        return
+
+    if lower_text.startswith("/skills"):
+        args = incoming.text.strip().split(maxsplit=1)
+        if len(args) == 1:
+            lines = ["当前可用的 skills："]
+            for skill in list_skills():
+                lines.append(f"- {skill.name}：{skill.description}")
+            lines.append("\n发送 /skills 技能名 查看详情。")
+            await send_text_message(client, incoming.chat_id, "\n".join(lines))
+        else:
+            skill = get_skill(args[1].strip().lower())
+            if skill is None:
+                await send_text_message(client, incoming.chat_id, f"没有找到名为 {args[1].strip()} 的 skill。")
+            elif not skill.file_path.exists():
+                await send_text_message(client, incoming.chat_id, f"Skill '{skill.name}' 的文件暂时不存在。")
+            else:
+                detail = skill.file_path.read_text(encoding="utf-8").strip()
+                await send_text_message(client, incoming.chat_id,
+                    f"Skill: {skill.name}\n标题：{skill.title}\n说明：{skill.description}\n\n{detail}"
+                )
+        return
+
+    if lower_text == "/memory":
+        await send_text_message(client, incoming.chat_id, load_long_term_memory())
+        return
+
+    if lower_text == "/memory_candidates":
+        candidates = list_memory_candidates()
+        if not candidates:
+            await send_text_message(client, incoming.chat_id, "当前没有候选记忆。")
+        else:
+            lines = ["当前候选记忆："]
+            for path in candidates:
+                lines.append(f"- {path.name}")
+            await send_text_message(client, incoming.chat_id, "\n".join(lines))
+        return
+
+    if lower_text.startswith("/remember"):
+        memory_note = " ".join(incoming.text.strip().split()[1:]).strip()
+        if not memory_note:
+            await send_text_message(client, incoming.chat_id, "用法：/remember 这里填写要写入长期记忆的内容")
+        else:
+            candidate_file = append_memory_candidate(
+                memory_note,
+                metadata=create_memory_metadata(category="general", source="manual_remember", confidence="medium"),
+            )
+            await send_text_message(client, incoming.chat_id, f"已写入候选记忆区，等待后续确认：\n- {candidate_file.name}")
+        return
+
+    if lower_text.startswith("/memory_accept"):
+        args = incoming.text.strip().split()
+        if len(args) < 2:
+            await send_text_message(client, incoming.chat_id, "用法：/memory_accept 文件名 [profile|preferences|rules|general]")
+        else:
+            name = args[1].strip()
+            category = args[2].strip().lower() if len(args) > 2 else "general"
+            try:
+                target = accept_memory_candidate(name, category)
+            except FileNotFoundError:
+                await send_text_message(client, incoming.chat_id, f"没有找到候选记忆：{name}")
+                return
+            await send_text_message(client, incoming.chat_id, f"已采纳候选记忆：\n- {name}\n- 目标：{target.name}")
+        return
+
+    if lower_text.startswith("/memory_reject"):
+        args = incoming.text.strip().split()
+        if len(args) < 2:
+            await send_text_message(client, incoming.chat_id, "用法：/memory_reject 文件名")
+        else:
+            name = args[1].strip()
+            try:
+                reject_memory_candidate(name)
+            except FileNotFoundError:
+                await send_text_message(client, incoming.chat_id, f"没有找到候选记忆：{name}")
+                return
+            await send_text_message(client, incoming.chat_id, f"已拒绝并删除候选记忆：\n- {name}")
+        return
+
     conversation = build_feishu_conversation(incoming, build_session_scope(incoming))
     text = incoming.text.strip()
     lower_text = text.lower()
@@ -310,8 +513,35 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
         await send_text_message(client, incoming.chat_id, "收到，正在处理...")
 
     bot = FeishuBotAdapter(client)
+    photo_payload = None
+    file_payload = None
+    prompt: str
+    record_text: str
     try:
-        if incoming.image_key:
+        if incoming.voice_key:
+            voice_data = await download_file(client, incoming.message_id, incoming.voice_key)
+            voice_path = save_voice_bytes(voice_data)
+            transcript = transcribe_voice(voice_path)
+            prompt = (
+                "用户发送了一条语音消息。\n"
+                f"语音本地路径：{voice_path}\n"
+                f"语音转写文本：{transcript}\n\n"
+                "请把这条语音转写文本当作用户的真实输入来处理。"
+            )
+            record_text = f"[Feishu] 用户发送了一条语音。转写：{transcript}"
+        elif incoming.file_key:
+            file_data = await download_file(client, incoming.message_id, incoming.file_key)
+            file_payload = save_uploaded_file(file_data, incoming.file_name or "file", "application/octet-stream")
+            caption = incoming.text or "无"
+            prompt = (
+                f"用户上传了一个文件：{file_payload.file_name}\n"
+                f"用户附带说明：{caption}\n\n"
+                f"文件已保存到：{file_payload.saved_path}\n"
+                "请使用 read_workspace_file 工具读取并分析该文件，"
+                "然后直接给出有帮助的中文回答。"
+            )
+            record_text = f"[Feishu] 用户上传了一个文件：{file_payload.file_name}。说明：{caption}"
+        elif incoming.image_key:
             image_data = await download_image(client, incoming.message_id, incoming.image_key)
             photo_payload = PhotoPayload(data=image_data, mime_type="image/jpeg")
             caption = incoming.text or "无"
@@ -358,6 +588,7 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
             prompt = text
             record_text = f"[Feishu] {text}"
             photo_payload = None
+            file_payload = None
 
         reply = await run_agent_for_conversation(
             prompt=prompt,
@@ -366,10 +597,14 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
             continue_session=True,
             record_text=record_text,
             uploaded_image=photo_payload,
+            uploaded_file=file_payload,
         )
         await reply_agent_result(client, incoming.chat_id, reply)
     except AgentServiceError as exc:
         await send_text_message(client, incoming.chat_id, f"抱歉，这次调用模型服务失败了：{exc}")
+    except SpeechRecognitionError as exc:
+        logger.warning("Feishu speech recognition failed: %s", exc)
+        await send_text_message(client, incoming.chat_id, f"语音已保存，但语音转文字失败：{exc}")
     except Exception as exc:
         logger.exception("Feishu message handling failed")
         await send_text_message(client, incoming.chat_id, f"抱歉，飞书通道处理失败了：{exc}")

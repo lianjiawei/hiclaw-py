@@ -10,7 +10,7 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from tavily import TavilyClient
 
 from hiclaw.config import TAVILY_API_KEY, TAVILY_MAX_RESULTS, TAVILY_SEARCH_DEPTH, WORKSPACE_DIR
-from hiclaw.core.delivery import MessageSender, send_sender_text
+from hiclaw.core.delivery import MessageSender, send_sender_file, send_sender_text
 from hiclaw.core.types import ConversationRef
 from hiclaw.tasks.service import create_scheduled_task
 from hiclaw.tasks.repository import list_scheduled_task_records, cancel_scheduled_task_record
@@ -171,6 +171,43 @@ def build_mcp_server(
             ]
         }
 
+    from pathlib import Path as _Path
+
+    @tool("send_file", "向当前会话发送工作区中的一个文件。参数 path 是文件在工作区中的绝对或相对路径。", {"path": str})
+    async def send_file(args: dict[str, Any]) -> dict[str, Any]:
+        raw_path = args["path"]
+        from hiclaw.config import WORKSPACE_DIR
+        file_path = _Path(raw_path)
+        if not file_path.is_absolute():
+            file_path = WORKSPACE_DIR / file_path
+        resolved = file_path.resolve()
+        if not str(resolved).startswith(str(WORKSPACE_DIR.resolve())):
+            return {
+                "content": [{"type": "text", "text": f"Error: Path '{raw_path}' is outside the workspace."}],
+                "is_error": True,
+            }
+        if not resolved.is_file():
+            return {
+                "content": [{"type": "text", "text": f"Error: File not found: {raw_path}"}],
+                "is_error": True,
+            }
+        try:
+            file_data = resolved.read_bytes()
+        except Exception as exc:
+            return {
+                "content": [{"type": "text", "text": f"Error reading file: {exc}"}],
+                "is_error": True,
+            }
+        await send_sender_file(sender, target_id, file_data, resolved.name)
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"File '{resolved.name}' has been sent to the current conversation.",
+                }
+            ]
+        }
+
     @tool("get_uploaded_image", "获取本轮上传的图片内容。", {})
     async def get_uploaded_image(_: dict[str, Any]) -> dict[str, Any]:
         if uploaded_image is None:
@@ -297,6 +334,7 @@ def build_mcp_server(
         list_workspace_files,
         read_workspace_file,
         send_message,
+        send_file,
         get_uploaded_image,
         web_search,
         list_tasks,

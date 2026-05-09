@@ -23,6 +23,9 @@ WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR = WORKSPACE_DIR / "uploads"
 UPLOAD_VOICES_DIR = UPLOADS_DIR / "voices"
 UPLOAD_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_FILES_DIR = UPLOADS_DIR / "files"
+UPLOAD_FILES_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_MAX_FILE_SIZE_BYTES = int(os.getenv("UPLOAD_MAX_FILE_SIZE_MB", "10")) * 1024 * 1024
 TUI_OUTPUT_DIR = Path(os.getenv("TUI_OUTPUT_DIR", str(WORKSPACE_DIR / "outputs" / "tui"))).resolve()
 TUI_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -112,6 +115,7 @@ ALLOWED_TOOLS = [
     "list_workspace_files",
     "read_workspace_file",
     "send_message",
+    "send_file",
     "get_uploaded_image",
     "web_search",
     "list_tasks",
@@ -121,6 +125,7 @@ ALLOWED_TOOLS = [
     "mcp__hiclaw__list_workspace_files",
     "mcp__hiclaw__read_workspace_file",
     "mcp__hiclaw__send_message",
+    "mcp__hiclaw__send_file",
     "mcp__hiclaw__get_uploaded_image",
     "mcp__hiclaw__web_search",
     "mcp__hiclaw__list_tasks",

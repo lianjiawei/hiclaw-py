@@ -17,7 +17,7 @@ from telegram.ext import (
 
 from hiclaw.channels.telegram.access import is_owner
 from hiclaw.agents.runtime import run_agent_for_conversation
-from hiclaw.core.response import AgentReply
+from hiclaw.core.response import AgentFile, AgentReply
 from hiclaw.agents.router import AgentServiceError, build_telegram_conversation
 from hiclaw.config import (
     TELEGRAM_BOOTSTRAP_RETRIES,
@@ -29,7 +29,7 @@ from hiclaw.config import (
     TELEGRAM_WRITE_TIMEOUT,
     SHOW_TOOL_TRACE,
 )
-from hiclaw.media.store import load_photo_message, save_voice_message
+from hiclaw.media.store import FilePayload, load_photo_message, save_uploaded_file, save_voice_message
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
 from hiclaw.memory.store import (
     accept_memory_candidate,
@@ -61,6 +61,14 @@ class TelegramMessageSender:
     async def send_message(self, chat_id: str | int, text: str) -> None:
         await self.send_text(str(chat_id), text)
 
+    async def send_file(self, chat_id: str | int, file_data: bytes, file_name: str) -> None:
+        from io import BytesIO
+        await self.bot.send_document(
+            chat_id=int(chat_id),
+            document=BytesIO(file_data),
+            filename=file_name,
+        )
+
 
 async def reply_plain_text(update: Update, text: str) -> None:
     """发送纯文本回复，用于错误提示或格式化回退。"""
@@ -91,7 +99,7 @@ async def reply_formatted_text(update: Update, text: str) -> None:
 
 
 async def reply_agent_result(update: Update, reply: AgentReply) -> None:
-    """统一发送 Agent 返回结果：先发图片，再发文本说明。"""
+    """统一发送 Agent 返回结果：先发图片和文件，再发文本说明。"""
 
     if not update.message:
         return
@@ -100,6 +108,11 @@ async def reply_agent_result(update: Update, reply: AgentReply) -> None:
         image_file = BytesIO(image.data)
         image_file.name = f"generated.{image.mime_type.removeprefix('image/')}"
         await update.message.reply_photo(photo=image_file, caption=image.caption)
+
+    for f in reply.files:
+        file_obj = BytesIO(f.data)
+        file_obj.name = f.file_name
+        await update.message.reply_document(document=file_obj)
 
     if reply.text.strip():
         await reply_formatted_text(update, reply.text)
@@ -259,6 +272,55 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except Exception:
         logger.exception("Unexpected error while handling voice")
         await reply_plain_text(update, "抱歉，机器人处理语音时出了点问题。请稍后再试。")
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """处理文档/文件消息：下载到工作区，交给 Agent 分析。"""
+
+    if not update.message or not update.message.document:
+        return
+    if not is_owner(update):
+        return
+
+    try:
+        doc = update.message.document
+        telegram_file = await doc.get_file()
+        data = await telegram_file.download_as_bytearray()
+        file_name = doc.file_name or "file"
+
+        file_payload = save_uploaded_file(bytes(data), file_name,
+                                          doc.mime_type or "application/octet-stream")
+        caption = (update.message.caption or "").strip() or "无"
+
+        prompt = (
+            f"用户上传了一个文件：{file_payload.file_name}\n"
+            f"用户附带说明：{caption}\n\n"
+            f"文件已保存到：{file_payload.saved_path}\n"
+            "请使用 read_workspace_file 工具读取并分析该文件，"
+            "然后直接给出有帮助的中文回答。"
+        )
+        record_text = f"[Telegram] 用户上传了一个文件：{file_payload.file_name}。说明：{caption}"
+
+        sender = TelegramMessageSender(update.get_bot())
+        response = await run_agent_for_conversation(
+            prompt=prompt,
+            conversation=build_telegram_conversation(update),
+            sender=sender,
+            record_text=record_text,
+            uploaded_file=file_payload,
+        )
+        await reply_agent_result(update, response)
+    except AgentServiceError as exc:
+        await reply_plain_text(update, f"抱歉，这次文件处理失败了：{exc}")
+    except NetworkError:
+        logger.warning("Telegram network error while handling document", exc_info=True)
+        await reply_plain_text(update, "抱歉，当前网络连接不稳定，文件处理失败。请稍后重试。")
+    except TelegramError:
+        logger.exception("Telegram API error while handling document")
+        await reply_plain_text(update, "抱歉，文件下载或消息发送失败了。请稍后重试。")
+    except Exception:
+        logger.exception("Unexpected error while handling document")
+        await reply_plain_text(update, "抱歉，机器人处理文件时出了点问题。请稍后再试。")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -555,6 +617,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("cancel", cancel_task))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(error_handler)
     return app
