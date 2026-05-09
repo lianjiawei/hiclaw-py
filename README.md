@@ -354,7 +354,15 @@ Starting channels: Telegram, Feishu
 
 ### 后台运行（Linux 部署）
 
-SSH 断开后服务不会退出，三种方式按需选择：
+SSH 断开后服务不会退出。**推荐直接使用项目自带脚本**：
+
+```bash
+./scripts/start.sh    # 一键启动（nohup 方式，PID 写入 data/hiclaw.pid）
+./scripts/stop.sh     # 一键停止
+tail -f data/hiclaw.log   # 查看日志
+```
+
+也可以手动按以下三种方式操作：
 
 **nohup（最简单）：**
 
