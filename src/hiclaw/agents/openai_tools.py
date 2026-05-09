@@ -258,6 +258,38 @@ ALL_OPENAI_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_skill",
+            "description": "更新已有 skill 的内容。参数 name 是 skill 名称，title/description/keywords/body 为可选参数，只更新传入的字段。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "skill 名称"},
+                    "title": {"type": "string", "description": "人类可读的标题"},
+                    "description": {"type": "string", "description": "简短描述"},
+                    "keywords": {"type": "string", "description": "逗号分隔的关键词列表"},
+                    "body": {"type": "string", "description": "skill 的完整指令内容"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_skill",
+            "description": "删除指定 skill。参数 name 是 skill 的名称。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "skill 名称"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -321,6 +353,10 @@ async def execute_openai_tool(name: str, arguments: dict[str, Any], ctx: OpenAIT
     elif name == "read_skill":
         tool_summary = str(arguments.get("name") or "")
     elif name == "create_skill":
+        tool_summary = str(arguments.get("name") or "")
+    elif name == "update_skill":
+        tool_summary = str(arguments.get("name") or "")
+    elif name == "delete_skill":
         tool_summary = str(arguments.get("name") or "")
     if conversation is not None:
         mark_agent_tool_started(conversation, name, tool_summary)
@@ -606,5 +642,85 @@ async def _execute_openai_tool_inner(name: str, arguments: dict[str, Any], ctx: 
             return f"错误：写入文件失败：{exc}"
 
         return f"Skill '{name}' 已创建，文件：{target.name}。下次调用时自动生效。"
+
+    if name == "update_skill":
+        import re as _re
+        name = str(arguments.get("name") or "").strip()
+        if not name:
+            return "错误：name 不能为空。"
+        if not _re.match(r'^[a-z][a-z0-9_]*$', name):
+            return "错误：name 只能包含小写字母、数字和下划线。"
+
+        from hiclaw.skills.store import get_skill as _get_skill
+        skill = _get_skill(name)
+        if skill is None:
+            return f"未找到名为 '{name}' 的 skill。使用 list_skills 查看可用列表。"
+
+        target = skill.file_path
+        if not target.exists():
+            return f"Skill '{name}' 的文件不存在。"
+
+        try:
+            raw = target.read_text(encoding="utf-8")
+        except Exception as exc:
+            return f"错误：读取文件失败：{exc}"
+
+        fm_match = _re.match(r'^---\s*\n(.*?)\n---', raw, _re.DOTALL)
+        if not fm_match:
+            return f"错误：Skill '{name}' 文件格式无效（缺少 frontmatter）。"
+
+        frontmatter_block = raw[:fm_match.end()]
+        body_content = raw[fm_match.end():].strip()
+
+        updated_fields = []
+        new_title = str(arguments.get("title") or "").strip()
+        new_description = str(arguments.get("description") or "").strip()
+        new_keywords = str(arguments.get("keywords") or "").strip()
+        new_body = str(arguments.get("body") or "").strip()
+
+        if new_title:
+            frontmatter_block = _re.sub(r'(?m)^title:.*$', f'title: {new_title}', frontmatter_block)
+            updated_fields.append("title")
+        if new_description:
+            frontmatter_block = _re.sub(r'(?m)^description:.*$', f'description: {new_description}', frontmatter_block)
+            updated_fields.append("description")
+        if new_keywords:
+            frontmatter_block = _re.sub(r'(?m)^keywords:.*$', f'keywords: [{new_keywords}]', frontmatter_block)
+            updated_fields.append("keywords")
+        if new_body:
+            body_content = new_body
+            updated_fields.append("body")
+
+        if not updated_fields:
+            return "错误：没有指定要更新的字段。传入 title/description/keywords/body 中的至少一个。"
+
+        new_content = frontmatter_block + "\n" + body_content + "\n"
+        try:
+            target.write_text(new_content, encoding="utf-8")
+        except Exception as exc:
+            return f"错误：写入文件失败：{exc}"
+
+        return f"Skill '{name}' 已更新字段：{', '.join(updated_fields)}。下次调用时自动生效。"
+
+    if name == "delete_skill":
+        name = str(arguments.get("name") or "").strip()
+        if not name:
+            return "错误：name 不能为空。"
+
+        from hiclaw.skills.store import get_skill as _get_skill
+        skill = _get_skill(name)
+        if skill is None:
+            return f"未找到名为 '{name}' 的 skill。使用 list_skills 查看可用列表。"
+
+        target = skill.file_path
+        if not target.exists():
+            return f"Skill '{name}' 的文件不存在。"
+
+        try:
+            target.unlink()
+        except Exception as exc:
+            return f"错误：删除文件失败：{exc}"
+
+        return f"Skill '{name}' 已删除（{target.name}）。下次调用时自动生效。"
 
     return f"错误：未知工具 {name}。"

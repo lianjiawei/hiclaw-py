@@ -124,6 +124,8 @@ ALLOWED_TOOLS = [
     "list_skills",
     "read_skill",
     "create_skill",
+    "update_skill",
+    "delete_skill",
     "mcp__hiclaw__get_current_time",
     "mcp__hiclaw__list_workspace_files",
     "mcp__hiclaw__read_workspace_file",
@@ -137,4 +139,6 @@ ALLOWED_TOOLS = [
     "mcp__hiclaw__list_skills",
     "mcp__hiclaw__read_skill",
     "mcp__hiclaw__create_skill",
+    "mcp__hiclaw__update_skill",
+    "mcp__hiclaw__delete_skill",
 ]

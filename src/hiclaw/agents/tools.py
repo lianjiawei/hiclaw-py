@@ -244,6 +244,90 @@ def build_mcp_server(
             "content": [{"type": "text", "text": f"Skill '{name}' 已创建，文件：{target.name}。下次调用时自动生效。"}],
         }
 
+    @tool("update_skill", "更新已有 skill 的内容。参数 name 是 skill 名称，title/description/keywords/body 为可选参数，只更新传入的字段。", {"name": str, "title": str, "description": str, "keywords": str, "body": str})
+    async def update_skill(args: dict[str, Any]) -> dict[str, Any]:
+        import re as _re
+        name = args.get("name", "").strip()
+        if not name:
+            return {"content": [{"type": "text", "text": "错误：name 不能为空。"}], "is_error": True}
+        if not _re.match(r'^[a-z][a-z0-9_]*$', name):
+            return {"content": [{"type": "text", "text": "错误：name 只能包含小写字母、数字和下划线。"}], "is_error": True}
+
+        skill = _get_skill(name)
+        if skill is None:
+            return {"content": [{"type": "text", "text": f"未找到名为 '{name}' 的 skill。使用 list_skills 查看可用列表。"}], "is_error": True}
+
+        target = skill.file_path
+        if not target.exists():
+            return {"content": [{"type": "text", "text": f"Skill '{name}' 的文件不存在。"}], "is_error": True}
+
+        try:
+            raw = target.read_text(encoding="utf-8")
+        except Exception as exc:
+            return {"content": [{"type": "text", "text": f"错误：读取文件失败：{exc}"}], "is_error": True}
+
+        fm_match = _re.match(r'^---\s*\n(.*?)\n---', raw, _re.DOTALL)
+        if not fm_match:
+            return {"content": [{"type": "text", "text": f"错误：Skill '{name}' 文件格式无效（缺少 frontmatter）。"}], "is_error": True}
+
+        frontmatter_block = raw[:fm_match.end()]
+        body_content = raw[fm_match.end():].strip()
+
+        updated_fields = []
+        new_title = args.get("title", "").strip()
+        new_description = args.get("description", "").strip()
+        new_keywords = args.get("keywords", "").strip()
+        new_body = args.get("body", "").strip()
+
+        if new_title:
+            frontmatter_block = _re.sub(r'(?m)^title:.*$', f'title: {new_title}', frontmatter_block)
+            updated_fields.append("title")
+        if new_description:
+            frontmatter_block = _re.sub(r'(?m)^description:.*$', f'description: {new_description}', frontmatter_block)
+            updated_fields.append("description")
+        if new_keywords:
+            frontmatter_block = _re.sub(r'(?m)^keywords:.*$', f'keywords: [{new_keywords}]', frontmatter_block)
+            updated_fields.append("keywords")
+        if new_body:
+            body_content = new_body
+            updated_fields.append("body")
+
+        if not updated_fields:
+            return {"content": [{"type": "text", "text": "错误：没有指定要更新的字段。传入 title/description/keywords/body 中的至少一个。"}], "is_error": True}
+
+        new_content = frontmatter_block + "\n" + body_content + "\n"
+        try:
+            target.write_text(new_content, encoding="utf-8")
+        except Exception as exc:
+            return {"content": [{"type": "text", "text": f"错误：写入文件失败：{exc}"}], "is_error": True}
+
+        return {
+            "content": [{"type": "text", "text": f"Skill '{name}' 已更新字段：{', '.join(updated_fields)}。下次调用时自动生效。"}],
+        }
+
+    @tool("delete_skill", "删除指定 skill。参数 name 是 skill 的名称。", {"name": str})
+    async def delete_skill(args: dict[str, Any]) -> dict[str, Any]:
+        name = args.get("name", "").strip()
+        if not name:
+            return {"content": [{"type": "text", "text": "错误：name 不能为空。"}], "is_error": True}
+
+        skill = _get_skill(name)
+        if skill is None:
+            return {"content": [{"type": "text", "text": f"未找到名为 '{name}' 的 skill。使用 list_skills 查看可用列表。"}], "is_error": True}
+
+        target = skill.file_path
+        if not target.exists():
+            return {"content": [{"type": "text", "text": f"Skill '{name}' 的文件不存在。"}], "is_error": True}
+
+        try:
+            target.unlink()
+        except Exception as exc:
+            return {"content": [{"type": "text", "text": f"错误：删除文件失败：{exc}"}], "is_error": True}
+
+        return {
+            "content": [{"type": "text", "text": f"Skill '{name}' 已删除（{target.name}）。下次调用时自动生效。"}],
+        }
+
     @tool("send_file", "向当前会话发送工作区中的一个文件。参数 path 是文件在工作区中的绝对或相对路径。", {"path": str})
     async def send_file(args: dict[str, Any]) -> dict[str, Any]:
         raw_path = args["path"]
@@ -414,6 +498,8 @@ def build_mcp_server(
         list_skills,
         read_skill,
         create_skill,
+        update_skill,
+        delete_skill,
     ]
     if uploaded_image is not None:
         tools.append(get_uploaded_image)
