@@ -9,7 +9,7 @@ cd "$PROJECT_DIR"
 
 if [ ! -f "$PID_FILE" ]; then
     echo "No PID file found, trying pkill..."
-    pkill -f "python -m hiclaw" 2>/dev/null && echo "Stopped via pkill." || echo "No running HiClaw process found."
+    pkill -f "(python -m hiclaw|bin/hiclaw)" 2>/dev/null && echo "Stopped via pkill." || echo "No running HiClaw process found."
     exit 0
 fi
 
