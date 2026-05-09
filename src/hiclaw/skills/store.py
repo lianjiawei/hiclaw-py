@@ -182,6 +182,7 @@ class SkillLoader:
 # ---------------------------------------------------------------------------
 
 _loader = SkillLoader(SKILLS_DIR)
+_last_matched_skills: list[SkillDefinition] = []
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +230,9 @@ def select_skills(prompt: str, max_skills: int = 3) -> list[SkillDefinition]:
 
 
 def build_skill_prompt(prompt: str) -> tuple[list[SkillDefinition], str]:
+    global _last_matched_skills
     selected_skills = select_skills(prompt)
+    _last_matched_skills = selected_skills
     if not selected_skills:
         return [], ''
 
@@ -241,3 +244,7 @@ def build_skill_prompt(prompt: str) -> tuple[list[SkillDefinition], str]:
         parts.append(f'\n[Skill: {skill.name} | {skill.title}]\n{content}')
 
     return selected_skills, '\n'.join(parts).strip()
+
+
+def get_last_matched_skills() -> list[SkillDefinition]:
+    return list(_last_matched_skills)

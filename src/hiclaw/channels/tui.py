@@ -29,6 +29,7 @@ from hiclaw.memory.store import append_memory_candidate, append_structured_long_
 from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
 from hiclaw.tasks.service import handle_task_command
 from hiclaw.memory.session import clear_session_id, get_session_file
+from hiclaw.skills.store import list_skills, get_skill, get_last_matched_skills
 
 TUI_SESSION_SCOPE_PREFIX = "tui"
 TUI_INSTANCE_ID = os.getenv("HICLAW_TUI_INSTANCE_ID", f"pid{os.getpid()}_{uuid.uuid4().hex[:8]}")
@@ -79,6 +80,7 @@ COMMANDS = [
     CommandInfo("/tasks", "查看当前 TUI 定时任务"),
     CommandInfo("/cancel", "取消指定定时任务"),
     CommandInfo("/paste", "进入多行输入，支持 /preview /send /cancel"),
+    CommandInfo("/skills", "查看可用技能"),
     CommandInfo("/exit", "退出"),
 ]
 
@@ -227,7 +229,7 @@ def print_header() -> None:
     print(panel_line("Images", display_path(TUI_OUTPUT_DIR), width, "■", THEME_PRIMARY))
     print(color(f"├{rule}┤", THEME_SECONDARY))
     print(box_line("Enter 发送；/paste 多行；/status 查看状态；/help 查看命令", width, THEME_MUTED))
-    print(box_line("/reset 清空会话；/clear 清屏；/retry 重发；/exit 退出", width, THEME_MUTED))
+    print(box_line("/reset 清空会话；/clear 清屏；/retry 重发；/skills 技能；/exit 退出", width, THEME_MUTED))
     print(color(f"╰{rule}╯", THEME_SECONDARY))
     print()
 
@@ -385,6 +387,10 @@ def print_help() -> None:
         "/exit       退出",
         "↑/↓         回看历史输入（Windows 终端）",
         "",
+        "Skills",
+        "/skills     查看可用技能列表",
+        "/skills 名   查看单个 skill 详情",
+        "",
         "Tasks",
         "/schedule_in 秒数 内容",
         "/tasks",
@@ -404,6 +410,32 @@ def print_status(state: TuiState) -> None:
         f"Last error: {state.last_error or '-'}",
     ])
     print_message_block("Status", text, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Runtime"), accent=THEME_SECONDARY)
+
+
+def print_skills(name: str | None = None) -> None:
+    if name:
+        skill = get_skill(name.strip().lower())
+        if skill is None:
+            print_message_block("Skills", f"没有找到名为 {name} 的 skill。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Skill lookup"), accent=THEME_MUTED)
+        elif not skill.file_path.exists():
+            print_message_block("Skills", f"Skill '{skill.name}' 的文件暂时不存在。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Skill lookup"), accent=THEME_MUTED)
+        else:
+            detail = skill.file_path.read_text(encoding="utf-8").strip()
+            print_message_block("Skills", f"Skill: {skill.name}\n标题: {skill.title}\n说明: {skill.description}\n\n{detail}", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Skill detail"), accent=THEME_PRIMARY)
+    else:
+        lines = ["当前可用的 skills："]
+        for skill in list_skills():
+            lines.append(f"- {skill.name}: {skill.description}")
+        lines.append("\n发送 /skills 技能名 查看详情。")
+        print_message_block("Skills", "\n".join(lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Skill catalog"), accent=THEME_PRIMARY)
+
+
+def print_matched_skills() -> None:
+    matched = get_last_matched_skills()
+    if not matched:
+        return
+    names = ", ".join(s.name for s in matched)
+    print(color(f"[Skills: {names}]", THEME_MUTED))
 
 
 def save_reply_images(reply: AgentReply) -> list[Path]:
@@ -444,6 +476,7 @@ def render_turn(provider: str, reply: AgentReply, saved_images: list[Path], elap
         print()
         for path in saved_images:
             print(color(f"图片输出: {display_path(path)}", THEME_PRIMARY_BOLD))
+    print_matched_skills()
     print(rule)
     print()
 
@@ -541,6 +574,11 @@ async def run_tui() -> None:
                 if not prompt:
                     print_message_block("System", "已取消多行输入。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), TuiMode.NORMAL), accent=THEME_MUTED)
                     continue
+            if command.startswith("/skills"):
+                parts = prompt.split(maxsplit=1)
+                skill_name = parts[1].strip() if len(parts) > 1 else None
+                print_skills(skill_name)
+                continue
 
             result = await handle_task_command(conversation, prompt)
             if result.handled:
