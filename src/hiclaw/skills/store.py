@@ -37,14 +37,29 @@ def _parse_frontmatter(content: str) -> dict[str, object]:
 
     raw = match.group(1)
     result: dict[str, object] = {}
-
-    for line in raw.split('\n'):
-        line = line.strip()
+    lines = raw.split('\n')
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
         if not line or ':' not in line:
+            i += 1
             continue
         key, _, value = line.partition(':')
         key = key.strip()
         value = value.strip()
+
+        # Multi-line block scalar (| or >)
+        if value in ('|', '>', '|-', '>-', '|+', '>+'):
+            body_lines: list[str] = []
+            i += 1
+            while i < len(lines):
+                next_line = lines[i]
+                if next_line and not next_line[0].isspace():
+                    break
+                body_lines.append(next_line.strip())
+                i += 1
+            result[key] = '\n'.join(body_lines).strip()
+            continue
 
         if value.startswith('[') and value.endswith(']'):
             inner = value[1:-1]
@@ -57,8 +72,16 @@ def _parse_frontmatter(content: str) -> dict[str, object]:
         elif (value.startswith('"') and value.endswith('"')) or \
              (value.startswith("'") and value.endswith("'")):
             result[key] = value[1:-1]
+        elif value.lower() in ('true', 'yes'):
+            result[key] = True
+        elif value.lower() in ('false', 'no'):
+            result[key] = False
+        elif value.lower() in ('null', '~'):
+            result[key] = None
         else:
             result[key] = value
+
+        i += 1
 
     return result
 
