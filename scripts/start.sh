@@ -29,12 +29,17 @@ if [ -f "$ENV_FILE" ]; then
     [ -n "$env_port" ] && DASHBOARD_PORT="$env_port"
 fi
 
-# 如果 host 是 0.0.0.0 或 127.0.0.1，尝试获取真实局域网 IP
+# 获取公网 IP（用于外部访问）
+PUBLIC_IP=$(curl -s --connect-timeout 3 ifconfig.me 2>/dev/null)
+
+# 如果 host 是 0.0.0.0 或 127.0.0.1，尝试获取真实访问 IP
 ACCESS_HOST="$DASHBOARD_HOST"
 if [ "$DASHBOARD_HOST" = "0.0.0.0" ] || [ "$DASHBOARD_HOST" = "127.0.0.1" ]; then
-    real_ip=$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[0-9.]+' | head -1)
-    if [ -n "$real_ip" ]; then
-        ACCESS_HOST="$real_ip"
+    if [ -n "$PUBLIC_IP" ]; then
+        ACCESS_HOST="$PUBLIC_IP"
+    else
+        # 降级到内网 IP
+        ACCESS_HOST=$(hostname -I 2>/dev/null | awk '{print $1}')
     fi
 fi
 
