@@ -1,0 +1,31 @@
+{
+  "name": "workflow_create_skill_with_preview",
+  "description": "创建 skill 后自动读取最新内容，便于立即校验 frontmatter 和正文。",
+  "category": "workflows",
+  "providers": ["claude", "openai"],
+  "risk_level": "write",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string", "description": "skill 名称"},
+      "title": {"type": "string", "description": "skill 标题"},
+      "description": {"type": "string", "description": "skill 描述"},
+      "keywords": {"type": "string", "description": "逗号分隔关键词"},
+      "body": {"type": "string", "description": "skill 正文"}
+    },
+    "required": ["name", "title", "description", "keywords", "body"]
+  },
+  "steps": [
+    {
+      "name": "create",
+      "tool_name": "create_skill",
+      "arguments_from_input": ["name", "title", "description", "keywords", "body"]
+    },
+    {
+      "name": "preview",
+      "tool_name": "read_skill",
+      "arguments_from_input": ["name"]
+    }
+  ],
+  "finalizer": "skill_file_preview"
+}

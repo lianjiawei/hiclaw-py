@@ -20,6 +20,10 @@ from prompt_toolkit.styles import Style
 
 from hiclaw.agents.router import AgentServiceError, build_tui_conversation
 from hiclaw.agents.runtime import run_agent_for_conversation
+from hiclaw.capabilities.catalog import build_tool_catalog_text, build_tool_detail_text, build_workflow_catalog_text, build_workflow_detail_text
+from hiclaw.capabilities.runtime import start_background_capability_watcher, stop_background_capability_watcher
+from hiclaw.capabilities.tools import ToolContext
+from hiclaw.core.confirmation import ToolConfirmationRequest
 from hiclaw.core.response import AgentReply
 from hiclaw.config import PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
 from hiclaw.core.provider_state import get_provider, set_provider
@@ -81,17 +85,42 @@ COMMANDS = [
     CommandInfo("/cancel", "取消指定定时任务"),
     CommandInfo("/paste", "进入多行输入，支持 /preview /send /cancel"),
     CommandInfo("/skills", "查看可用技能"),
+    CommandInfo("/tools", "查看可用工具"),
+    CommandInfo("/workflows", "查看可用工作流"),
     CommandInfo("/exit", "退出"),
 ]
 
 
 @dataclass(slots=True)
 class ConsoleBot:
+    indicator_pause: asyncio.Event | None = None
+
     async def send_text(self, target_id: str, text: str) -> None:
         print_message_block("Tool", text, accent=THEME_SECONDARY)
 
     async def send_message(self, chat_id: str | int, text: str) -> None:
         await self.send_text(str(chat_id), text)
+
+    async def confirm_tool_use(self, target_id: str, request: ToolConfirmationRequest) -> bool:
+        pause_event = self.indicator_pause
+        if pause_event is not None:
+            pause_event.set()
+        try:
+            detail_lines = [
+                request.prompt,
+                f"工具: {request.tool_name}",
+                f"类别: {request.category}",
+                f"风险: {request.risk_level}",
+            ]
+            if request.summary:
+                detail_lines.append(f"摘要: {request.summary}")
+            detail_lines.append("输入 y 确认，其他任意输入取消。")
+            print_message_block("Confirm", "\n".join(detail_lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Tool approval"), accent=THEME_PRIMARY)
+            answer = await asyncio.to_thread(input, color("确认执行? [y/N] ", THEME_PRIMARY_BOLD))
+            return answer.strip().lower() in {"y", "yes"}
+        finally:
+            if pause_event is not None:
+                pause_event.clear()
 
 
 @dataclass(slots=True)
@@ -229,7 +258,7 @@ def print_header() -> None:
     print(panel_line("Images", display_path(TUI_OUTPUT_DIR), width, "■", THEME_PRIMARY))
     print(color(f"├{rule}┤", THEME_SECONDARY))
     print(box_line("Enter 发送；/paste 多行；/status 查看状态；/help 查看命令", width, THEME_MUTED))
-    print(box_line("/reset 清空会话；/clear 清屏；/retry 重发；/skills 技能；/exit 退出", width, THEME_MUTED))
+    print(box_line("/reset 清空会话；/clear 清屏；/retry 重发；/skills 技能；/tools 工具；/workflows 工作流；/exit 退出", width, THEME_MUTED))
     print(color(f"╰{rule}╯", THEME_SECONDARY))
     print()
 
@@ -391,6 +420,14 @@ def print_help() -> None:
         "/skills     查看可用技能列表",
         "/skills 名   查看单个 skill 详情",
         "",
+        "Tools",
+        "/tools      查看当前 Provider 可用工具",
+        "/tools 名    查看单个工具详情",
+        "",
+        "Workflows",
+        "/workflows  查看可用 workflow 列表",
+        "/workflows 名 查看单个 workflow 详情",
+        "",
         "Tasks",
         "/schedule_in 秒数 内容",
         "/tasks",
@@ -430,6 +467,32 @@ def print_skills(name: str | None = None) -> None:
         print_message_block("Skills", "\n".join(lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Skill catalog"), accent=THEME_PRIMARY)
 
 
+def print_tools(name: str | None = None, provider: str | None = None) -> None:
+    active_provider = provider or get_provider()
+    ctx = ToolContext(sender=None, target_id="tui")
+    if name:
+        detail = build_tool_detail_text(name.strip(), provider=active_provider, context=ctx)
+        if detail is None:
+            print_message_block("Tools", f"没有找到名为 {name} 的工具，或当前 Provider 不可用。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), active_provider), accent=THEME_MUTED)
+            return
+        print_message_block("Tools", detail, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), f"{active_provider} detail"), accent=THEME_PRIMARY)
+        return
+    catalog = build_tool_catalog_text(provider=active_provider, context=ctx)
+    print_message_block("Tools", catalog, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), f"{active_provider} catalog"), accent=THEME_PRIMARY)
+
+
+def print_workflows(name: str | None = None) -> None:
+    if name:
+        detail = build_workflow_detail_text(name.strip())
+        if detail is None:
+            print_message_block("Workflows", f"没有找到名为 {name} 的 workflow。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Workflow lookup"), accent=THEME_MUTED)
+            return
+        print_message_block("Workflows", detail, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Workflow detail"), accent=THEME_PRIMARY)
+        return
+    catalog = build_workflow_catalog_text()
+    print_message_block("Workflows", catalog, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Workflow catalog"), accent=THEME_PRIMARY)
+
+
 def print_matched_skills() -> None:
     matched = get_last_matched_skills()
     if not matched:
@@ -453,10 +516,13 @@ def save_reply_images(reply: AgentReply) -> list[Path]:
     return saved_paths
 
 
-async def run_thinking_indicator(stop_event: asyncio.Event) -> None:
+async def run_thinking_indicator(stop_event: asyncio.Event, pause_event: asyncio.Event) -> None:
     frames = ["处理中", "处理中.", "处理中..", "处理中..."]
     index = 0
     while not stop_event.is_set():
+        if pause_event.is_set():
+            await asyncio.sleep(0.1)
+            continue
         sys.stdout.write("\r\033[2K" + color(frames[index % len(frames)], THEME_MUTED))
         sys.stdout.flush()
         index += 1
@@ -485,7 +551,9 @@ async def submit_prompt(prompt: str, bot: ConsoleBot, state: TuiState) -> None:
     state.mode = TuiMode.BUSY
     state.is_busy = True
     stop_event = asyncio.Event()
-    indicator_task = asyncio.create_task(run_thinking_indicator(stop_event))
+    pause_event = asyncio.Event()
+    bot.indicator_pause = pause_event
+    indicator_task = asyncio.create_task(run_thinking_indicator(stop_event, pause_event))
     started_at = perf_counter()
     try:
         reply = await run_agent_for_conversation(
@@ -498,6 +566,7 @@ async def submit_prompt(prompt: str, bot: ConsoleBot, state: TuiState) -> None:
     finally:
         stop_event.set()
         await indicator_task
+        bot.indicator_pause = None
         state.is_busy = False
         state.mode = TuiMode.NORMAL
     elapsed_ms = int((perf_counter() - started_at) * 1000)
@@ -518,6 +587,7 @@ async def run_tui() -> None:
     router = DeliveryRouter()
     router.register_conversation(conversation, bot)
     scheduler_runtime = start_background_scheduler(router)
+    capability_watcher = start_background_capability_watcher()
     try:
         while True:
             try:
@@ -579,6 +649,16 @@ async def run_tui() -> None:
                 skill_name = parts[1].strip() if len(parts) > 1 else None
                 print_skills(skill_name)
                 continue
+            if command.startswith("/tools"):
+                parts = prompt.split(maxsplit=1)
+                tool_name = parts[1].strip() if len(parts) > 1 else None
+                print_tools(tool_name, provider=state.provider)
+                continue
+            if command.startswith("/workflows"):
+                parts = prompt.split(maxsplit=1)
+                workflow_name = parts[1].strip() if len(parts) > 1 else None
+                print_workflows(workflow_name)
+                continue
 
             result = await handle_task_command(conversation, prompt)
             if result.handled:
@@ -639,6 +719,7 @@ async def run_tui() -> None:
                 print()
                 break
     finally:
+        stop_background_capability_watcher(capability_watcher)
         stop_background_scheduler(scheduler_runtime)
     print("TUI 已退出。")
 

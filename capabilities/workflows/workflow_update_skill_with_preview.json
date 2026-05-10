@@ -1,0 +1,31 @@
+{
+  "name": "workflow_update_skill_with_preview",
+  "description": "更新 skill 元数据或正文后，自动返回最新完整内容。",
+  "category": "workflows",
+  "providers": ["claude", "openai"],
+  "risk_level": "write",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string", "description": "skill 名称"},
+      "title": {"type": "string", "description": "skill 标题"},
+      "description": {"type": "string", "description": "skill 描述"},
+      "keywords": {"type": "string", "description": "逗号分隔关键词"},
+      "body": {"type": "string", "description": "skill 正文"}
+    },
+    "required": ["name"]
+  },
+  "steps": [
+    {
+      "name": "update",
+      "tool_name": "update_skill",
+      "arguments_from_input": ["name", "title", "description", "keywords", "body"]
+    },
+    {
+      "name": "preview",
+      "tool_name": "read_skill",
+      "arguments_from_input": ["name"]
+    }
+  ],
+  "finalizer": "skill_file_preview"
+}

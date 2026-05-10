@@ -17,6 +17,13 @@ SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", "86400"))
 SKILLS_DIR = PROJECT_ROOT / "skills"
 SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 
+CAPABILITIES_DIR = Path(os.getenv("CAPABILITIES_DIR", str(PROJECT_ROOT / "capabilities"))).resolve()
+CAPABILITIES_DIR.mkdir(parents=True, exist_ok=True)
+WORKFLOW_DEFINITIONS_DIR = Path(os.getenv("WORKFLOW_DEFINITIONS_DIR", str(CAPABILITIES_DIR / "workflows"))).resolve()
+WORKFLOW_DEFINITIONS_DIR.mkdir(parents=True, exist_ok=True)
+TOOL_DEFINITIONS_DIR = Path(os.getenv("TOOL_DEFINITIONS_DIR", str(CAPABILITIES_DIR / "tools"))).resolve()
+TOOL_DEFINITIONS_DIR.mkdir(parents=True, exist_ok=True)
+
 WORKSPACE_DIR = Path(os.getenv("WORKSPACE_DIR", str(PROJECT_ROOT / "workspace"))).resolve()
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -60,6 +67,8 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 TAVILY_SEARCH_DEPTH = os.getenv("TAVILY_SEARCH_DEPTH", "basic")
 TAVILY_MAX_RESULTS = int(os.getenv("TAVILY_MAX_RESULTS", "5"))
 OPENAI_ALLOWED_TOOLS = os.getenv("OPENAI_ALLOWED_TOOLS", "")
+CAPABILITY_WATCHER_ENABLED = os.getenv("CAPABILITY_WATCHER_ENABLED", "1") == "1"
+CAPABILITY_WATCHER_INTERVAL_SECONDS = float(os.getenv("CAPABILITY_WATCHER_INTERVAL_SECONDS", "1.0"))
 
 TELEGRAM_CONNECT_TIMEOUT = float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "30"))
 TELEGRAM_READ_TIMEOUT = float(os.getenv("TELEGRAM_READ_TIMEOUT", "30"))
@@ -103,42 +112,3 @@ OPENAI_IMAGE_TIMEOUT_SECONDS = float(os.getenv("OPENAI_IMAGE_TIMEOUT_SECONDS", "
 OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS = os.getenv("OPENAI_IMAGE_INCLUDE_OPTIONAL_PARAMS", "1") == "1"
 
 CLAUDE_TOOLS_PRESET = {"type": "preset", "preset": "claude_code"}
-
-ALLOWED_TOOLS = [
-    "Read",
-    "Write",
-    "Edit",
-    "Glob",
-    "Grep",
-    "Bash",
-    "get_current_time",
-    "list_workspace_files",
-    "read_workspace_file",
-    "send_message",
-    "send_file",
-    "get_uploaded_image",
-    "web_search",
-    "list_tasks",
-    "cancel_task",
-    "create_task",
-    "list_skills",
-    "read_skill",
-    "create_skill",
-    "update_skill",
-    "delete_skill",
-    "mcp__hiclaw__get_current_time",
-    "mcp__hiclaw__list_workspace_files",
-    "mcp__hiclaw__read_workspace_file",
-    "mcp__hiclaw__send_message",
-    "mcp__hiclaw__send_file",
-    "mcp__hiclaw__get_uploaded_image",
-    "mcp__hiclaw__web_search",
-    "mcp__hiclaw__list_tasks",
-    "mcp__hiclaw__cancel_task",
-    "mcp__hiclaw__create_task",
-    "mcp__hiclaw__list_skills",
-    "mcp__hiclaw__read_skill",
-    "mcp__hiclaw__create_skill",
-    "mcp__hiclaw__update_skill",
-    "mcp__hiclaw__delete_skill",
-]

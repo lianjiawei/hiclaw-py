@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 
+from hiclaw.capabilities.runtime import start_background_capability_watcher, stop_background_capability_watcher
 from hiclaw.channels.registry import get_registered_channels, start_background_channel
 from hiclaw.core.delivery import DeliveryRouter
 from hiclaw.monitor.server import start_background_dashboard
@@ -62,6 +63,7 @@ def main() -> None:
         channel.register_sender(router)
 
     scheduler_runtime = start_background_scheduler(router)
+    capability_watcher = start_background_capability_watcher()
 
     background_threads = []
     foreground_runner = None
@@ -90,6 +92,7 @@ def main() -> None:
             except KeyboardInterrupt:
                 print("Bot stopped.")
     finally:
+        stop_background_capability_watcher(capability_watcher)
         stop_background_scheduler(scheduler_runtime)
 
 

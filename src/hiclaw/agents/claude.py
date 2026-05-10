@@ -14,9 +14,9 @@ from claude_agent_sdk import (
     query,
 )
 
+from hiclaw.capabilities.tools import ToolContext, build_claude_allowed_tools
 from hiclaw.agents.tools import build_mcp_server
 from hiclaw.config import (
-    ALLOWED_TOOLS,
     ANTHROPIC_API_KEY,
     ANTHROPIC_BASE_URL,
     ANTHROPIC_MODEL,
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = WORKSPACE_DIR / "prompts"
+CLAUDE_BASE_ALLOWED_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
 
 
 class ClaudeServiceError(Exception):
@@ -195,6 +196,15 @@ async def run_agent(
         channel=channel,
         session_scope=session_scope,
     )
+    tool_context = ToolContext(
+        sender=sender,
+        target_id=target_id,
+        uploaded_image=uploaded_image,
+        channel=channel,
+        session_scope=session_scope,
+        enforce_confirmations=hasattr(sender, "confirm_tool_use"),
+    )
+    allowed_tools = build_claude_allowed_tools(CLAUDE_BASE_ALLOWED_TOOLS, ctx=tool_context)
     conversation = ConversationRef(channel=channel or "unknown", target_id=str(target_id), session_scope=session_scope or f"unknown:{target_id}")
     saved_session_id = load_session_id(session_scope) if continue_session else None
     options = ClaudeAgentOptions(
@@ -208,7 +218,7 @@ async def run_agent(
         tools=CLAUDE_TOOLS_PRESET,
         system_prompt=build_system_prompt(prompt, session_scope),
         mcp_servers={"hiclaw": tool_server},
-        allowed_tools=ALLOWED_TOOLS,
+        allowed_tools=allowed_tools,
         hooks=build_tool_hooks(sender, target_id, conversation),
         continue_conversation=continue_session and bool(saved_session_id),
         resume=saved_session_id,
@@ -230,7 +240,7 @@ async def run_agent(
                     tools=CLAUDE_TOOLS_PRESET,
                     system_prompt=build_system_prompt(prompt, session_scope),
                     mcp_servers={"hiclaw": tool_server},
-                    allowed_tools=ALLOWED_TOOLS,
+                    allowed_tools=allowed_tools,
                     hooks=build_tool_hooks(sender, target_id, conversation),
                     continue_conversation=False,
                     resume=None,

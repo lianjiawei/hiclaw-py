@@ -17,6 +17,16 @@ from telegram.ext import (
 
 from hiclaw.channels.telegram.access import is_owner
 from hiclaw.agents.runtime import run_agent_for_conversation
+from hiclaw.capabilities.catalog import build_tool_catalog_text, build_tool_detail_text, build_workflow_catalog_text, build_workflow_detail_text
+from hiclaw.capabilities.tools import ToolContext
+from hiclaw.core.confirmation import (
+    ToolConfirmationRequest,
+    get_pending_confirmation,
+    normalize_confirmation_reply,
+    register_pending_confirmation,
+    resolve_pending_confirmation,
+    wait_for_pending_confirmation,
+)
 from hiclaw.core.response import AgentFile, AgentReply
 from hiclaw.agents.router import AgentServiceError, build_telegram_conversation
 from hiclaw.config import (
@@ -68,6 +78,29 @@ class TelegramMessageSender:
             document=BytesIO(file_data),
             filename=file_name,
         )
+
+    async def confirm_tool_use(self, target_id: str, request: ToolConfirmationRequest) -> bool:
+        try:
+            register_pending_confirmation(target_id, request)
+        except RuntimeError:
+            await self.send_text(target_id, "当前已有待确认的工具操作，请先回复 y/确认 或 n/取消。")
+            return False
+
+        lines = [
+            request.prompt,
+            f"工具：{request.tool_name}",
+            f"类别：{request.category}",
+            f"风险：{request.risk_level}",
+        ]
+        if request.summary:
+            lines.append(f"摘要：{request.summary}")
+        lines.append("请回复 y/确认 同意，或回复 n/取消 拒绝。")
+        await self.send_text(target_id, "\n".join(lines))
+        try:
+            return await wait_for_pending_confirmation(target_id)
+        except TimeoutError:
+            await self.send_text(target_id, "工具确认已超时，当前操作已取消。")
+            return False
 
 
 async def reply_plain_text(update: Update, text: str) -> None:
@@ -129,6 +162,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         text = update.message.text.strip()
         lower_text = text.lower()
+        pending = get_pending_confirmation(update.effective_chat.id) if update.effective_chat else None
+        if pending is not None:
+            decision = normalize_confirmation_reply(text)
+            if decision is None:
+                await reply_plain_text(update, "当前有待确认的工具操作，请回复 y/确认 或 n/取消。")
+            else:
+                resolve_pending_confirmation(update.effective_chat.id, decision)
+                await reply_plain_text(update, "已确认，继续执行。" if decision else "已取消本次工具操作。")
+            return
         if lower_text in {"/claude", "/openai"}:
             provider = set_provider(lower_text.removeprefix("/"))
             await reply_plain_text(update, f"已切换到 {provider}。")
@@ -336,7 +378,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "我可以回答问题、处理文字、图片和语音消息，使用 Claude 内置工具，操作工作区，并继续之前保存的会话。\n"
         "还支持定时任务，例如“30秒后提醒我喝水”“每天下午3点提醒我站起来活动一下”。\n"
         "可以使用 /memory 查看长期记忆，使用 /reset 清空当前会话。\n"
-        "使用 /skills 查看当前可用的 skills。\n"
+        "使用 /skills 查看当前可用的 skills，/tools 查看当前可用工具，/workflows 查看当前可用 workflow。\n"
         "使用 /schedule_in、/tasks、/cancel 管理定时任务。"
     )
 
@@ -482,6 +524,48 @@ async def show_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     )
 
 
+async def show_tools(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """查看当前 Provider 可用工具，或查看单个工具详情。"""
+
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+
+    tool_ctx = ToolContext(sender=None, target_id=str(update.effective_chat.id) if update.effective_chat else "telegram")
+    provider = get_provider()
+    if not context.args:
+        await reply_plain_text(update, build_tool_catalog_text(provider=provider, context=tool_ctx))
+        return
+
+    tool_name = context.args[0].strip()
+    detail = build_tool_detail_text(tool_name, provider=provider, context=tool_ctx)
+    if detail is None:
+        await reply_plain_text(update, f"没有找到名为 {tool_name} 的工具，或当前 Provider 不可用。")
+        return
+    await reply_plain_text(update, detail)
+
+
+async def show_workflows(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """查看当前可用的 workflows，或查看某个 workflow 的详细说明。"""
+
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+
+    if not context.args:
+        await reply_plain_text(update, build_workflow_catalog_text())
+        return
+
+    workflow_name = context.args[0].strip()
+    detail = build_workflow_detail_text(workflow_name)
+    if detail is None:
+        await reply_plain_text(update, f"没有找到名为 {workflow_name} 的 workflow。")
+        return
+    await reply_plain_text(update, detail)
+
+
 async def schedule_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """通过命令创建一个单次定时任务。"""
 
@@ -608,6 +692,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("memory_accept", accept_memory))
     app.add_handler(CommandHandler("memory_reject", reject_memory))
     app.add_handler(CommandHandler("skills", show_skills))
+    app.add_handler(CommandHandler("tools", show_tools))
+    app.add_handler(CommandHandler("workflows", show_workflows))
     app.add_handler(CommandHandler("reset", reset_session))
     app.add_handler(CommandHandler("provider", show_provider))
     app.add_handler(CommandHandler("claude", switch_to_claude))

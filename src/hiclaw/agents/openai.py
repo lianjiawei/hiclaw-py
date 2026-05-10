@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 
 import httpx
 
+from hiclaw.capabilities.tools import list_openai_tool_names, parse_openai_allowed_tools
 from hiclaw.core.response import AgentImage, AgentReply
 from hiclaw.config import (
     OPENAI_API_KEY,
@@ -140,6 +141,8 @@ def build_openai_instructions(prompt: str, session_scope: str | None = None) -> 
     context_snapshot = build_context_snapshot(session_scope, prompt)
     selected_skills, skill_prompt = build_skill_prompt(prompt)
     selected_skill_names = ", ".join(skill.name for skill in selected_skills) or "无"
+    tool_names = list_openai_tool_names(allowed_names=parse_openai_allowed_tools())
+    tool_list_text = "、".join(f"`{name}`" for name in tool_names)
 
     return f"""
 你现在运行在一个多入口个人智能体系统中。
@@ -154,7 +157,7 @@ def build_openai_instructions(prompt: str, session_scope: str | None = None) -> 
 
 规则：
 1. 回答尽量使用自然、清晰的中文。
-2. 本模式当前可用工具有：`get_current_time`、`web_search`、`send_message`、`send_file`、`list_workspace_files`、`read_workspace_file`、`write_workspace_file`、`edit_workspace_file`、`glob_workspace_files`、`grep_workspace_content`、`list_tasks`、`cancel_task`、`create_task`、`bash`。
+2. 本模式当前可用工具有：{tool_list_text}。
 3. 当用户询问当前时间时，优先调用 `get_current_time`。
 4. 当用户需要联网搜索信息时，优先调用 `web_search`。
 5. 如果需要额外主动给当前会话发送一条消息，请调用 `send_message`。
@@ -367,8 +370,14 @@ async def run_openai_agent(
         {"role": "system", "content": build_openai_instructions(prompt, session_scope)},
         *build_chat_messages(prompt, uploaded_image),
     ]
-    tools = build_openai_tools()
-    tool_ctx = OpenAIToolContext(sender=sender, target_id=target_id, channel=channel, session_scope=session_scope)
+    tool_ctx = OpenAIToolContext(
+        sender=sender,
+        target_id=target_id,
+        channel=channel,
+        session_scope=session_scope,
+        enforce_confirmations=hasattr(sender, "confirm_tool_use"),
+    )
+    tools = build_openai_tools(tool_ctx)
 
     try:
         async with acquire_runtime_lock(session_scope, "openai"):

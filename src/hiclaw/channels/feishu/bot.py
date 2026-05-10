@@ -23,6 +23,17 @@ from lark_oapi.api.im.v1 import (
 
 from hiclaw.agents.router import AgentServiceError, build_feishu_conversation
 from hiclaw.agents.runtime import run_agent_for_conversation
+from hiclaw.capabilities.catalog import build_tool_catalog_text, build_tool_detail_text, build_workflow_catalog_text, build_workflow_detail_text
+from hiclaw.capabilities.runtime import start_background_capability_watcher, stop_background_capability_watcher
+from hiclaw.capabilities.tools import ToolContext
+from hiclaw.core.confirmation import (
+    ToolConfirmationRequest,
+    get_pending_confirmation,
+    normalize_confirmation_reply,
+    register_pending_confirmation,
+    resolve_pending_confirmation,
+    wait_for_pending_confirmation,
+)
 from hiclaw.core.response import AgentReply
 from hiclaw.config import (
     FEISHU_ALLOWED_CHAT_IDS,
@@ -93,6 +104,29 @@ class FeishuBotAdapter:
     async def send_file(self, chat_id: str | int, file_data: bytes, file_name: str) -> None:
         file_key = await upload_file_message(self.client, file_data, file_name)
         await send_file_message(self.client, str(chat_id), file_key)
+
+    async def confirm_tool_use(self, target_id: str, request: ToolConfirmationRequest) -> bool:
+        try:
+            register_pending_confirmation(target_id, request)
+        except RuntimeError:
+            await self.send_text(target_id, "当前已有待确认的工具操作，请先回复 y/确认 或 n/取消。")
+            return False
+
+        lines = [
+            request.prompt,
+            f"工具：{request.tool_name}",
+            f"类别：{request.category}",
+            f"风险：{request.risk_level}",
+        ]
+        if request.summary:
+            lines.append(f"摘要：{request.summary}")
+        lines.append("请回复 y/确认 同意，或回复 n/取消 拒绝。")
+        await self.send_text(target_id, "\n".join(lines))
+        try:
+            return await wait_for_pending_confirmation(target_id)
+        except TimeoutError:
+            await self.send_text(target_id, "工具确认已超时，当前操作已取消。")
+            return False
 
 
 def ensure_feishu_config() -> None:
@@ -400,6 +434,15 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
         return
 
     lower_text = incoming.text.strip().lower()
+    pending = get_pending_confirmation(incoming.chat_id) if incoming.text.strip() else None
+    if pending is not None:
+        decision = normalize_confirmation_reply(incoming.text)
+        if decision is None:
+            await send_text_message(client, incoming.chat_id, "当前有待确认的工具操作，请回复 y/确认 或 n/取消。")
+        else:
+            resolve_pending_confirmation(incoming.chat_id, decision)
+            await send_text_message(client, incoming.chat_id, "已确认，继续执行。" if decision else "已取消本次工具操作。")
+        return
     if lower_text in {"/claude", "/openai", "/provider"}:
         if lower_text == "/provider":
             await send_text_message(client, incoming.chat_id, f"当前 Provider: {get_provider()}")
@@ -413,7 +456,7 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
             "你好，我是你的机器人。\n\n"
             "我可以回答问题、处理文字、图片和文件消息，使用模型内置工具，操作工作区，并继续之前保存的会话。\n"
             "支持定时任务、长期记忆管理和自定义技能。\n"
-            "使用 /skills 查看可用技能，/memory 查看长期记忆，/reset 清空当前会话。"
+            "使用 /skills 查看可用技能，/tools 查看可用工具，/workflows 查看可用 workflow，/memory 查看长期记忆，/reset 清空当前会话。"
         )
         return
 
@@ -436,6 +479,34 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
                 await send_text_message(client, incoming.chat_id,
                     f"Skill: {skill.name}\n标题：{skill.title}\n说明：{skill.description}\n\n{detail}"
                 )
+        return
+
+    if lower_text.startswith("/tools"):
+        args = incoming.text.strip().split(maxsplit=1)
+        tool_ctx = ToolContext(sender=None, target_id=incoming.chat_id)
+        provider = get_provider()
+        if len(args) == 1:
+            await send_text_message(client, incoming.chat_id, build_tool_catalog_text(provider=provider, context=tool_ctx))
+        else:
+            tool_name = args[1].strip()
+            detail = build_tool_detail_text(tool_name, provider=provider, context=tool_ctx)
+            if detail is None:
+                await send_text_message(client, incoming.chat_id, f"没有找到名为 {tool_name} 的工具，或当前 Provider 不可用。")
+            else:
+                await send_text_message(client, incoming.chat_id, detail)
+        return
+
+    if lower_text.startswith("/workflows"):
+        args = incoming.text.strip().split(maxsplit=1)
+        if len(args) == 1:
+            await send_text_message(client, incoming.chat_id, build_workflow_catalog_text())
+        else:
+            workflow_name = args[1].strip()
+            detail = build_workflow_detail_text(workflow_name)
+            if detail is None:
+                await send_text_message(client, incoming.chat_id, f"没有找到名为 {workflow_name} 的 workflow。")
+            else:
+                await send_text_message(client, incoming.chat_id, detail)
         return
 
     if lower_text == "/memory":
@@ -627,6 +698,7 @@ def build_event_handler(client: lark.Client):
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    capability_watcher = start_background_capability_watcher()
     client = build_feishu_client()
     event_handler = build_event_handler(client)
     ws_client = lark.ws.Client(
@@ -637,7 +709,10 @@ def main() -> None:
         auto_reconnect=True,
     )
     print("Feishu bot is running with WebSocket long connection...")
-    ws_client.start()
+    try:
+        ws_client.start()
+    finally:
+        stop_background_capability_watcher(capability_watcher)
 
 
 if __name__ == "__main__":
