@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.error import BadRequest, NetworkError, TelegramError
 from telegram.ext import (
     Application,
@@ -666,6 +666,27 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error("Unhandled exception in Telegram application", exc_info=context.error)
 
 
+async def post_init(application: Application) -> None:
+    """启动后设置 Telegram 命令菜单。"""
+    commands = [
+        BotCommand("start", "启动与能力介绍"),
+        BotCommand("skills", "查看可用技能"),
+        BotCommand("tools", "查看可用工具"),
+        BotCommand("workflows", "查看工作流"),
+        BotCommand("memory", "查看长期记忆"),
+        BotCommand("remember", "写入候选记忆"),
+        BotCommand("reset", "清空当前会话"),
+        BotCommand("provider", "查看当前模型"),
+        BotCommand("claude", "切换到 Claude"),
+        BotCommand("openai", "切换到 OpenAI"),
+        BotCommand("schedule_in", "创建定时任务"),
+        BotCommand("tasks", "列出定时任务"),
+        BotCommand("cancel", "取消定时任务"),
+    ]
+    await application.bot.set_my_commands(commands)
+    logger.info("Telegram command menu set successfully")
+
+
 def build_application() -> Application:
     """创建 Telegram 应用并注册命令、消息和错误处理器。"""
 
@@ -683,6 +704,7 @@ def build_application() -> Application:
         .get_updates_read_timeout(TELEGRAM_READ_TIMEOUT)
         .get_updates_write_timeout(TELEGRAM_WRITE_TIMEOUT)
         .get_updates_pool_timeout(TELEGRAM_POOL_TIMEOUT)
+        .post_init(post_init)
         .build()
     )
     app.add_handler(CommandHandler("start", start))
