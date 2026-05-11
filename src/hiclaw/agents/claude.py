@@ -20,7 +20,6 @@ from hiclaw.config import (
     ANTHROPIC_API_KEY,
     ANTHROPIC_BASE_URL,
     ANTHROPIC_MODEL,
-    CLAUDE_TOOLS_PRESET,
     SHOW_TOOL_TRACE,
     WORKSPACE_DIR,
 )
@@ -38,7 +37,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = WORKSPACE_DIR / "prompts"
-CLAUDE_BASE_ALLOWED_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]
+CLAUDE_BASE_ALLOWED_TOOLS: list[str] = []
 
 
 class ClaudeServiceError(Exception):
@@ -215,7 +214,7 @@ async def run_agent(
             "ANTHROPIC_MODEL": ANTHROPIC_MODEL,
         },
         cwd=str(WORKSPACE_DIR),
-        tools=CLAUDE_TOOLS_PRESET,
+        tools=[],
         system_prompt=build_system_prompt(prompt, session_scope),
         mcp_servers={"hiclaw": tool_server},
         allowed_tools=allowed_tools,
@@ -237,7 +236,7 @@ async def run_agent(
                         "ANTHROPIC_MODEL": ANTHROPIC_MODEL,
                     },
                     cwd=str(WORKSPACE_DIR),
-                    tools=CLAUDE_TOOLS_PRESET,
+                    tools=[],
                     system_prompt=build_system_prompt(prompt, session_scope),
                     mcp_servers={"hiclaw": tool_server},
                     allowed_tools=allowed_tools,

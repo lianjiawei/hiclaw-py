@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable
 from tavily import TavilyClient
 
 import hiclaw.config as config
-from hiclaw.core.confirmation import ToolConfirmationRequest, request_tool_confirmation
+from hiclaw.core.confirmation import ToolConfirmationRequest, has_session_tool_grant, request_tool_confirmation
 from hiclaw.core.delivery import MessageSender, send_sender_file, send_sender_text
 from hiclaw.core.types import ConversationRef
 from hiclaw.tasks.repository import cancel_scheduled_task_record, list_scheduled_task_records
@@ -794,11 +794,11 @@ def _build_default_registry() -> ToolRegistry:
     registry.register(ToolSpec("get_current_time", "获取当前服务器本地时间。", _schema({}), _handle_get_current_time, category="system"))
     registry.register(ToolSpec("list_workspace_files", "列出工作区中的文件和目录。", _schema({}), _handle_list_workspace_files, category="workspace"))
     registry.register(ToolSpec("read_workspace_file", "读取工作区中的文本文件。", _schema({"path": {"type": "string", "description": "工作区内的相对文件路径"}}, ["path"]), _handle_read_workspace_file, summary_builder=_tool_name_summary("path"), category="workspace"))
-    registry.register(ToolSpec("write_workspace_file", "在工作区中写入文本文件，不存在则创建。", _schema({"path": {"type": "string", "description": "工作区内的相对文件路径"}, "content": {"type": "string", "description": "要写入的完整文本内容"}}, ["path", "content"]), _handle_write_workspace_file, providers=frozenset({"openai"}), summary_builder=_tool_name_summary("path"), risk_level="write", category="workspace", confirmation=_confirm("请确认是否写入文件：{summary}")))
-    registry.register(ToolSpec("edit_workspace_file", "在工作区文本文件里替换指定字符串。", _schema({"path": {"type": "string", "description": "工作区内的相对文件路径"}, "old_string": {"type": "string", "description": "要替换的原始字符串"}, "new_string": {"type": "string", "description": "新的字符串"}, "replace_all": {"type": "boolean", "description": "是否替换全部匹配，默认 false"}}, ["path", "old_string", "new_string"]), _handle_edit_workspace_file, providers=frozenset({"openai"}), summary_builder=_tool_name_summary("path"), risk_level="write", category="workspace", confirmation=_confirm("请确认是否修改文件：{summary}")))
-    registry.register(ToolSpec("glob_workspace_files", "按 glob 模式查找工作区文件。", _schema({"pattern": {"type": "string", "description": "glob 模式，例如 src/**/*.py"}}, ["pattern"]), _handle_glob_workspace_files, providers=frozenset({"openai"}), summary_builder=_tool_name_summary("pattern"), category="workspace"))
-    registry.register(ToolSpec("grep_workspace_content", "按正则在工作区文件内容中搜索。", _schema({"pattern": {"type": "string", "description": "正则表达式"}, "include": {"type": "string", "description": "可选 glob 文件过滤，例如 *.py"}}, ["pattern"]), _handle_grep_workspace_content, providers=frozenset({"openai"}), summary_builder=_tool_name_summary("pattern"), category="workspace"))
-    registry.register(ToolSpec("bash", "执行 PowerShell 命令，适合多步骤文件操作和自动化任务。", _schema({"command": {"type": "string", "description": "要执行的 PowerShell 命令"}, "workdir": {"type": "string", "description": "可选工作目录，相对于工作区"}, "timeout": {"type": "integer", "description": "超时时间（秒），默认 60"}}, ["command"]), _handle_bash, providers=frozenset({"openai"}), summary_builder=_tool_command_summary, risk_level="execute", category="workspace", confirmation=_confirm("请确认是否执行 PowerShell 命令：{summary}")))
+    registry.register(ToolSpec("write_workspace_file", "在工作区中写入文本文件，不存在则创建。", _schema({"path": {"type": "string", "description": "工作区内的相对文件路径"}, "content": {"type": "string", "description": "要写入的完整文本内容"}}, ["path", "content"]), _handle_write_workspace_file, providers=frozenset({"openai", "claude"}), summary_builder=_tool_name_summary("path"), risk_level="write", category="workspace", confirmation=_confirm("请确认是否写入文件：{summary}")))
+    registry.register(ToolSpec("edit_workspace_file", "在工作区文本文件里替换指定字符串。", _schema({"path": {"type": "string", "description": "工作区内的相对文件路径"}, "old_string": {"type": "string", "description": "要替换的原始字符串"}, "new_string": {"type": "string", "description": "新的字符串"}, "replace_all": {"type": "boolean", "description": "是否替换全部匹配，默认 false"}}, ["path", "old_string", "new_string"]), _handle_edit_workspace_file, providers=frozenset({"openai", "claude"}), summary_builder=_tool_name_summary("path"), risk_level="write", category="workspace", confirmation=_confirm("请确认是否修改文件：{summary}")))
+    registry.register(ToolSpec("glob_workspace_files", "按 glob 模式查找工作区文件。", _schema({"pattern": {"type": "string", "description": "glob 模式，例如 src/**/*.py"}}, ["pattern"]), _handle_glob_workspace_files, providers=frozenset({"openai", "claude"}), summary_builder=_tool_name_summary("pattern"), category="workspace"))
+    registry.register(ToolSpec("grep_workspace_content", "按正则在工作区文件内容中搜索。", _schema({"pattern": {"type": "string", "description": "正则表达式"}, "include": {"type": "string", "description": "可选 glob 文件过滤，例如 *.py"}}, ["pattern"]), _handle_grep_workspace_content, providers=frozenset({"openai", "claude"}), summary_builder=_tool_name_summary("pattern"), category="workspace"))
+    registry.register(ToolSpec("bash", "执行 PowerShell 命令，适合多步骤文件操作和自动化任务。", _schema({"command": {"type": "string", "description": "要执行的 PowerShell 命令"}, "workdir": {"type": "string", "description": "可选工作目录，相对于工作区"}, "timeout": {"type": "integer", "description": "超时时间（秒），默认 60"}}, ["command"]), _handle_bash, providers=frozenset({"openai", "claude"}), summary_builder=_tool_command_summary, risk_level="execute", category="workspace", confirmation=_confirm("请确认是否执行 PowerShell 命令：{summary}")))
     registry.register(ToolSpec("web_search", "使用 Tavily 搜索互联网信息，返回结果摘要和 URL。", _schema({"query": {"type": "string", "description": "搜索关键词"}}, ["query"]), _handle_web_search, summary_builder=_tool_name_summary("query"), category="research"))
     registry.register(ToolSpec("send_message", "向当前会话额外发送一条消息。", _schema({"text": {"type": "string", "description": "消息内容"}}, ["text"]), _handle_send_message, summary_builder=_tool_name_summary("text"), risk_level="external", category="communication", confirmation=_confirm("请确认是否发送消息：{summary}")))
     registry.register(ToolSpec("send_file", "向当前会话发送工作区中的一个文件。参数 path 是文件在工作区中的路径。", _schema({"path": {"type": "string", "description": "工作区中的文件路径"}}, ["path"]), _handle_send_file, summary_builder=_tool_name_summary("path"), risk_level="external", category="communication", confirmation=_confirm("请确认是否发送文件：{summary}")))
@@ -873,6 +873,8 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: ToolContext) -
     if spec is None:
         return _error_result(f"错误：未知工具 {name}。")
     if spec.requires_confirmation() and ctx.enforce_confirmations:
+        if ctx.session_scope and has_session_tool_grant(ctx.session_scope, spec.name):
+            return await spec.handler(arguments, ctx)
         if ctx.sender is None:
             return _error_result(f"错误：工具 {name} 需要确认，但当前上下文无法发起确认。")
         prompt = spec.build_confirmation_prompt(arguments) or f"请确认是否执行工具 `{name}`。"
@@ -885,6 +887,8 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: ToolContext) -
                 prompt=prompt,
                 risk_level=spec.risk_level,
                 category=spec.category,
+                session_scope=ctx.session_scope or "",
+                allow_session_grant=spec.risk_level != "destructive" and bool(ctx.session_scope),
             ),
         )
         if approved is None:

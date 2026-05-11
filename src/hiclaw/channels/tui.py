@@ -23,7 +23,14 @@ from hiclaw.agents.runtime import run_agent_for_conversation
 from hiclaw.capabilities.catalog import build_tool_catalog_text, build_tool_detail_text, build_workflow_catalog_text, build_workflow_detail_text
 from hiclaw.capabilities.runtime import start_background_capability_watcher, stop_background_capability_watcher
 from hiclaw.capabilities.tools import ToolContext
-from hiclaw.core.confirmation import ToolConfirmationRequest
+from hiclaw.core.confirmation import (
+    ToolConfirmationRequest,
+    clear_session_tool_grants,
+    grant_session_tool_access,
+    list_session_tool_grants,
+    normalize_confirmation_reply,
+    revoke_session_tool_grant,
+)
 from hiclaw.core.response import AgentReply
 from hiclaw.config import PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
 from hiclaw.core.provider_state import get_provider, set_provider
@@ -87,6 +94,8 @@ COMMANDS = [
     CommandInfo("/skills", "查看可用技能"),
     CommandInfo("/tools", "查看可用工具"),
     CommandInfo("/workflows", "查看可用工作流"),
+    CommandInfo("/grants", "查看会话工具授权"),
+    CommandInfo("/revoke", "撤销工具授权"),
     CommandInfo("/exit", "退出"),
 ]
 
@@ -114,10 +123,18 @@ class ConsoleBot:
             ]
             if request.summary:
                 detail_lines.append(f"摘要: {request.summary}")
-            detail_lines.append("输入 y 确认，其他任意输入取消。")
+            detail_lines.append("输入“允许”仅执行一次；输入“本会话允许”后续本会话同工具自动执行；输入“拒绝”取消。")
             print_message_block("Confirm", "\n".join(detail_lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Tool approval"), accent=THEME_PRIMARY)
-            answer = await asyncio.to_thread(input, color("确认执行? [y/N] ", THEME_PRIMARY_BOLD))
-            return answer.strip().lower() in {"y", "yes"}
+            answer = await asyncio.to_thread(input, color("确认执行? [允许/本会话允许/拒绝] ", THEME_PRIMARY_BOLD))
+            decision = normalize_confirmation_reply(answer)
+            if decision == "approve_session":
+                granted = grant_session_tool_access(request.session_scope, request)
+                if granted:
+                    print_message_block("Confirm", f"已记住当前会话对工具 {request.tool_name} 的自动授权。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grant"), accent=THEME_SECONDARY)
+                else:
+                    print_message_block("Confirm", "当前工具不支持会话级授权，已按单次确认执行。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grant"), accent=THEME_MUTED)
+                return True
+            return decision == "approve_once"
         finally:
             if pause_event is not None:
                 pause_event.clear()
@@ -410,6 +427,8 @@ def print_help() -> None:
         "/retry      重发上一条用户输入",
         "/reset      清空当前连续会话",
         "/provider   查看当前 Provider",
+        "/grants     查看本会话工具授权",
+        "/revoke 名   撤销某个工具授权",
         "",
         "Input",
         "/paste      进入多行输入，支持 /preview /send /cancel",
@@ -491,6 +510,17 @@ def print_workflows(name: str | None = None) -> None:
         return
     catalog = build_workflow_catalog_text()
     print_message_block("Workflows", catalog, subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Workflow catalog"), accent=THEME_PRIMARY)
+
+
+def print_grants(session_scope: str) -> None:
+    grants = list_session_tool_grants(session_scope)
+    if not grants:
+        print_message_block("Grants", "当前会话没有已授权自动执行的工具。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grants"), accent=THEME_MUTED)
+        return
+    lines = ["当前会话工具授权："]
+    for grant in grants:
+        lines.append(f"- {grant.tool_name} [{grant.risk_level}/{grant.category}] 授权于 {grant.granted_at}")
+    print_message_block("Grants", "\n".join(lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grants"), accent=THEME_PRIMARY)
 
 
 def print_matched_skills() -> None:
@@ -628,7 +658,9 @@ async def run_tui() -> None:
             if command == "/reset":
                 clear_session_id(state.session_scope)
                 clear_session_context(state.session_scope)
-                print_message_block("Session", "TUI 连续会话已清空。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Fresh session"), accent=THEME_PRIMARY)
+                cleared_grants = clear_session_tool_grants(state.session_scope)
+                suffix = f" 已清除 {cleared_grants} 个工具授权。" if cleared_grants else ""
+                print_message_block("Session", f"TUI 连续会话已清空。{suffix}", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Fresh session"), accent=THEME_PRIMARY)
                 continue
             if command.startswith("/schedule") or command.startswith("/schedule_in") or command.startswith("/cancel") or command == "/tasks":
                 result = await handle_task_command(conversation, prompt)
@@ -658,6 +690,20 @@ async def run_tui() -> None:
                 parts = prompt.split(maxsplit=1)
                 workflow_name = parts[1].strip() if len(parts) > 1 else None
                 print_workflows(workflow_name)
+                continue
+            if command == "/grants":
+                print_grants(state.session_scope)
+                continue
+            if command.startswith("/revoke"):
+                parts = prompt.split(maxsplit=1)
+                if len(parts) == 1 or not parts[1].strip():
+                    print_message_block("Grants", "用法：/revoke 工具名", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grants"), accent=THEME_MUTED)
+                else:
+                    tool_name = parts[1].strip()
+                    if revoke_session_tool_grant(state.session_scope, tool_name):
+                        print_message_block("Grants", f"已撤销当前会话对工具 {tool_name} 的自动授权。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grants"), accent=THEME_PRIMARY)
+                    else:
+                        print_message_block("Grants", f"当前会话没有找到工具 {tool_name} 的授权记录。", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grants"), accent=THEME_MUTED)
                 continue
 
             result = await handle_task_command(conversation, prompt)

@@ -28,9 +28,13 @@ from hiclaw.capabilities.runtime import start_background_capability_watcher, sto
 from hiclaw.capabilities.tools import ToolContext
 from hiclaw.core.confirmation import (
     ToolConfirmationRequest,
+    clear_session_tool_grants,
+    grant_session_tool_access,
     get_pending_confirmation,
+    list_session_tool_grants,
     normalize_confirmation_reply,
     register_pending_confirmation,
+    revoke_session_tool_grant,
     resolve_pending_confirmation,
     wait_for_pending_confirmation,
 )
@@ -109,7 +113,7 @@ class FeishuBotAdapter:
         try:
             register_pending_confirmation(target_id, request)
         except RuntimeError:
-            await self.send_text(target_id, "当前已有待确认的工具操作，请先回复 y/确认 或 n/取消。")
+            await self.send_text(target_id, "当前已有待确认的工具操作，请先回复 允许、本会话允许 或 拒绝。")
             return False
 
         lines = [
@@ -120,7 +124,7 @@ class FeishuBotAdapter:
         ]
         if request.summary:
             lines.append(f"摘要：{request.summary}")
-        lines.append("请回复 y/确认 同意，或回复 n/取消 拒绝。")
+        lines.append("请回复“允许”仅执行一次；回复“本会话允许”后续本会话同工具自动执行；回复“拒绝”取消。")
         await self.send_text(target_id, "\n".join(lines))
         try:
             return await wait_for_pending_confirmation(target_id)
@@ -430,7 +434,9 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
         session_scope = build_session_scope(incoming)
         clear_session_id(session_scope)
         clear_session_context(session_scope)
-        await send_text_message(client, incoming.chat_id, "当前会话已清空，下一条消息会开启新会话。")
+        cleared_grants = clear_session_tool_grants(session_scope)
+        suffix = f" 已清除 {cleared_grants} 个工具授权。" if cleared_grants else ""
+        await send_text_message(client, incoming.chat_id, f"当前会话已清空，下一条消息会开启新会话。{suffix}")
         return
 
     lower_text = incoming.text.strip().lower()
@@ -438,10 +444,19 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
     if pending is not None:
         decision = normalize_confirmation_reply(incoming.text)
         if decision is None:
-            await send_text_message(client, incoming.chat_id, "当前有待确认的工具操作，请回复 y/确认 或 n/取消。")
+            await send_text_message(client, incoming.chat_id, "当前有待确认的工具操作，请回复“允许”“本会话允许”或“拒绝”。")
         else:
-            resolve_pending_confirmation(incoming.chat_id, decision)
-            await send_text_message(client, incoming.chat_id, "已确认，继续执行。" if decision else "已取消本次工具操作。")
+            if decision == "approve_session":
+                granted = grant_session_tool_access(pending.request.session_scope, pending.request)
+                resolve_pending_confirmation(incoming.chat_id, True)
+                if granted:
+                    await send_text_message(client, incoming.chat_id, f"已允许并记住当前会话授权：{pending.request.tool_name}")
+                else:
+                    await send_text_message(client, incoming.chat_id, "当前工具不支持会话级授权，已按单次确认继续执行。")
+            else:
+                approved = decision == "approve_once"
+                resolve_pending_confirmation(incoming.chat_id, approved)
+                await send_text_message(client, incoming.chat_id, "已确认，继续执行。" if approved else "已取消本次工具操作。")
         return
     if lower_text in {"/claude", "/openai", "/provider"}:
         if lower_text == "/provider":
@@ -456,8 +471,34 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
             "你好，我是你的机器人。\n\n"
             "我可以回答问题、处理文字、图片和文件消息，使用模型内置工具，操作工作区，并继续之前保存的会话。\n"
             "支持定时任务、长期记忆管理和自定义技能。\n"
-            "使用 /skills 查看可用技能，/tools 查看可用工具，/workflows 查看可用 workflow，/memory 查看长期记忆，/reset 清空当前会话。"
+            "使用 /skills 查看可用技能，/tools 查看可用工具，/workflows 查看可用 workflow，/memory 查看长期记忆，/reset 清空当前会话。\n"
+            "使用 /grants 查看当前会话工具授权，/revoke 工具名 撤销自动授权。"
         )
+        return
+
+    if lower_text == "/grants":
+        session_scope = build_session_scope(incoming)
+        grants = list_session_tool_grants(session_scope)
+        if not grants:
+            await send_text_message(client, incoming.chat_id, "当前会话没有已授权自动执行的工具。")
+        else:
+            lines = ["当前会话工具授权："]
+            for grant in grants:
+                lines.append(f"- {grant.tool_name} [{grant.risk_level}/{grant.category}] 授权于 {grant.granted_at}")
+            await send_text_message(client, incoming.chat_id, "\n".join(lines))
+        return
+
+    if lower_text.startswith("/revoke"):
+        args = incoming.text.strip().split(maxsplit=1)
+        if len(args) == 1 or not args[1].strip():
+            await send_text_message(client, incoming.chat_id, "用法：/revoke 工具名")
+        else:
+            session_scope = build_session_scope(incoming)
+            tool_name = args[1].strip()
+            if revoke_session_tool_grant(session_scope, tool_name):
+                await send_text_message(client, incoming.chat_id, f"已撤销当前会话对工具 {tool_name} 的自动授权。")
+            else:
+                await send_text_message(client, incoming.chat_id, f"当前会话没有找到工具 {tool_name} 的授权记录。")
         return
 
     if lower_text.startswith("/skills"):

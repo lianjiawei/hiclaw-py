@@ -21,9 +21,13 @@ from hiclaw.capabilities.catalog import build_tool_catalog_text, build_tool_deta
 from hiclaw.capabilities.tools import ToolContext
 from hiclaw.core.confirmation import (
     ToolConfirmationRequest,
+    clear_session_tool_grants,
+    grant_session_tool_access,
     get_pending_confirmation,
+    list_session_tool_grants,
     normalize_confirmation_reply,
     register_pending_confirmation,
+    revoke_session_tool_grant,
     resolve_pending_confirmation,
     wait_for_pending_confirmation,
 )
@@ -83,7 +87,7 @@ class TelegramMessageSender:
         try:
             register_pending_confirmation(target_id, request)
         except RuntimeError:
-            await self.send_text(target_id, "当前已有待确认的工具操作，请先回复 y/确认 或 n/取消。")
+            await self.send_text(target_id, "当前已有待确认的工具操作，请先回复 允许、本会话允许 或 拒绝。")
             return False
 
         lines = [
@@ -94,7 +98,7 @@ class TelegramMessageSender:
         ]
         if request.summary:
             lines.append(f"摘要：{request.summary}")
-        lines.append("请回复 y/确认 同意，或回复 n/取消 拒绝。")
+        lines.append("请回复“允许”仅执行一次；回复“本会话允许”后续本会话同工具自动执行；回复“拒绝”取消。")
         await self.send_text(target_id, "\n".join(lines))
         try:
             return await wait_for_pending_confirmation(target_id)
@@ -166,10 +170,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if pending is not None:
             decision = normalize_confirmation_reply(text)
             if decision is None:
-                await reply_plain_text(update, "当前有待确认的工具操作，请回复 y/确认 或 n/取消。")
+                await reply_plain_text(update, "当前有待确认的工具操作，请回复“允许”“本会话允许”或“拒绝”。")
             else:
-                resolve_pending_confirmation(update.effective_chat.id, decision)
-                await reply_plain_text(update, "已确认，继续执行。" if decision else "已取消本次工具操作。")
+                if decision == "approve_session":
+                    granted = grant_session_tool_access(pending.request.session_scope, pending.request)
+                    resolve_pending_confirmation(update.effective_chat.id, True)
+                    if granted:
+                        await reply_plain_text(update, f"已允许并记住当前会话授权：{pending.request.tool_name}")
+                    else:
+                        await reply_plain_text(update, "当前工具不支持会话级授权，已按单次确认继续执行。")
+                else:
+                    approved = decision == "approve_once"
+                    resolve_pending_confirmation(update.effective_chat.id, approved)
+                    await reply_plain_text(update, "已确认，继续执行。" if approved else "已取消本次工具操作。")
             return
         if lower_text in {"/claude", "/openai"}:
             provider = set_provider(lower_text.removeprefix("/"))
@@ -379,6 +392,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "还支持定时任务，例如“30秒后提醒我喝水”“每天下午3点提醒我站起来活动一下”。\n"
         "可以使用 /memory 查看长期记忆，使用 /reset 清空当前会话。\n"
         "使用 /skills 查看当前可用的 skills，/tools 查看当前可用工具，/workflows 查看当前可用 workflow。\n"
+        "使用 /grants 查看当前会话工具授权，/revoke 工具名 撤销自动授权。\n"
         "使用 /schedule_in、/tasks、/cancel 管理定时任务。"
     )
 
@@ -394,7 +408,44 @@ async def reset_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     session_scope = build_telegram_conversation(update).session_scope
     clear_session_id(session_scope)
     clear_session_context(session_scope)
-    await update.message.reply_text("当前会话已清空，下一条消息会开启新会话。")
+    cleared_grants = clear_session_tool_grants(session_scope)
+    suffix = f" 已清除 {cleared_grants} 个工具授权。" if cleared_grants else ""
+    await update.message.reply_text(f"当前会话已清空，下一条消息会开启新会话。{suffix}")
+
+
+async def show_grants(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+
+    session_scope = build_telegram_conversation(update).session_scope
+    grants = list_session_tool_grants(session_scope)
+    if not grants:
+        await reply_plain_text(update, "当前会话没有已授权自动执行的工具。")
+        return
+
+    lines = ["当前会话工具授权："]
+    for grant in grants:
+        lines.append(f"- {grant.tool_name} [{grant.risk_level}/{grant.category}] 授权于 {grant.granted_at}")
+    await reply_plain_text(update, "\n".join(lines))
+
+
+async def revoke_grant(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+    if not context.args:
+        await reply_plain_text(update, "用法：/revoke 工具名")
+        return
+
+    tool_name = context.args[0].strip()
+    session_scope = build_telegram_conversation(update).session_scope
+    if revoke_session_tool_grant(session_scope, tool_name):
+        await reply_plain_text(update, f"已撤销当前会话对工具 {tool_name} 的自动授权。")
+        return
+    await reply_plain_text(update, f"当前会话没有找到工具 {tool_name} 的授权记录。")
 
 
 async def show_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -673,6 +724,8 @@ async def post_init(application: Application) -> None:
         BotCommand("skills", "查看可用技能"),
         BotCommand("tools", "查看可用工具"),
         BotCommand("workflows", "查看工作流"),
+        BotCommand("grants", "查看会话工具授权"),
+        BotCommand("revoke", "撤销工具授权"),
         BotCommand("memory", "查看长期记忆"),
         BotCommand("remember", "写入候选记忆"),
         BotCommand("reset", "清空当前会话"),
@@ -716,6 +769,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("skills", show_skills))
     app.add_handler(CommandHandler("tools", show_tools))
     app.add_handler(CommandHandler("workflows", show_workflows))
+    app.add_handler(CommandHandler("grants", show_grants))
+    app.add_handler(CommandHandler("revoke", revoke_grant))
     app.add_handler(CommandHandler("reset", reset_session))
     app.add_handler(CommandHandler("provider", show_provider))
     app.add_handler(CommandHandler("claude", switch_to_claude))
