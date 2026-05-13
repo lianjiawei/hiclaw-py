@@ -227,6 +227,21 @@ def get_body(skill: SkillDefinition) -> str:
     return _loader.get_body(skill)
 
 
+def get_skills_by_names(names: list[str] | tuple[str, ...]) -> list[SkillDefinition]:
+    selected: list[SkillDefinition] = []
+    seen: set[str] = set()
+    for name in names:
+        skill = get_skill(str(name).strip())
+        if skill is None:
+            continue
+        normalized = skill.name.lower()
+        if normalized in seen:
+            continue
+        selected.append(skill)
+        seen.add(normalized)
+    return selected
+
+
 def select_skills(prompt: str, max_skills: int = 3) -> list[SkillDefinition]:
     text = prompt.lower()
     selected: list[SkillDefinition] = []
@@ -259,9 +274,9 @@ def select_skills(prompt: str, max_skills: int = 3) -> list[SkillDefinition]:
     return selected
 
 
-def build_skill_prompt(prompt: str) -> tuple[list[SkillDefinition], str]:
+def build_skill_prompt(prompt: str, selected_names: list[str] | tuple[str, ...] | None = None) -> tuple[list[SkillDefinition], str]:
     global _last_matched_skills
-    selected_skills = select_skills(prompt)
+    selected_skills = get_skills_by_names(selected_names or ()) if selected_names else select_skills(prompt)
     _last_matched_skills = selected_skills
     if not selected_skills:
         return [], ''

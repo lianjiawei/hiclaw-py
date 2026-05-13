@@ -28,7 +28,8 @@ class AgentReply:
     text: str = ""
     images: list[AgentImage] = field(default_factory=list)
     files: list[AgentFile] = field(default_factory=list)
+    provider: str = ""
 
     @classmethod
-    def from_text(cls, text: str) -> "AgentReply":
-        return cls(text=text)
+    def from_text(cls, text: str, provider: str = "") -> "AgentReply":
+        return cls(text=text, provider=provider)

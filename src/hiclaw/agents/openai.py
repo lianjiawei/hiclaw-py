@@ -11,6 +11,8 @@ import httpx
 
 from hiclaw.capabilities.tools import list_openai_tool_names, parse_openai_allowed_tools
 from hiclaw.core.response import AgentImage, AgentReply
+from hiclaw.decision.models import DecisionPlan
+from hiclaw.decision.render import render_decision_plan
 from hiclaw.config import (
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
@@ -135,14 +137,15 @@ def wants_image_output(prompt: str, record_text: str | None, uploaded_image: Any
     return False
 
 
-def build_openai_instructions(prompt: str, session_scope: str | None = None) -> str:
+def build_openai_instructions(prompt: str, session_scope: str | None = None, decision_plan: DecisionPlan | None = None) -> str:
     """构造 OpenAI chat/completions 使用的系统提示。"""
 
     context_snapshot = build_context_snapshot(session_scope, prompt)
-    selected_skills, skill_prompt = build_skill_prompt(prompt)
+    selected_skills, skill_prompt = build_skill_prompt(prompt, decision_plan.selected_skills if decision_plan is not None else None)
     selected_skill_names = ", ".join(skill.name for skill in selected_skills) or "无"
     tool_names = list_openai_tool_names(allowed_names=parse_openai_allowed_tools())
     tool_list_text = "、".join(f"`{name}`" for name in tool_names)
+    decision_text = render_decision_plan(decision_plan)
 
     return f"""
 你现在运行在一个多入口个人智能体系统中。
@@ -154,6 +157,8 @@ def build_openai_instructions(prompt: str, session_scope: str | None = None) -> 
 本轮命中的 skill：{selected_skill_names}
 
 {skill_prompt}
+
+{decision_text}
 
 规则：
 1. 回答尽量使用自然、清晰的中文。
@@ -359,6 +364,7 @@ async def run_openai_agent(
     uploaded_file: Any | None = None,
     session_scope: str | None = None,
     channel: str | None = None,
+    decision_plan: DecisionPlan | None = None,
 ) -> AgentReply:
     """OpenAI Provider：使用 chat/completions + SSE + 最小工具集。"""
 
@@ -367,7 +373,7 @@ async def run_openai_agent(
 
     headers = build_chat_headers()
     messages = [
-        {"role": "system", "content": build_openai_instructions(prompt, session_scope)},
+        {"role": "system", "content": build_openai_instructions(prompt, session_scope, decision_plan)},
         *build_chat_messages(prompt, uploaded_image),
     ]
     tool_ctx = OpenAIToolContext(

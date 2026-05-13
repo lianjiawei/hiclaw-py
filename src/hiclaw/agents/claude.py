@@ -25,6 +25,8 @@ from hiclaw.config import (
 )
 from hiclaw.core.delivery import MessageSender, send_sender_text
 from hiclaw.core.agent_activity import mark_agent_tool_finished, mark_agent_tool_started
+from hiclaw.decision.models import DecisionPlan
+from hiclaw.decision.render import render_decision_plan
 from hiclaw.memory.store import append_conversation_record, build_context_snapshot
 from hiclaw.core.locks import acquire_runtime_lock
 from hiclaw.core.types import ConversationRef
@@ -52,12 +54,13 @@ def load_prompt_fragment(name: str) -> str | None:
     return None
 
 
-def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
+def build_system_prompt(prompt: str, session_scope: str | None = None, decision_plan: DecisionPlan | None = None) -> str:
     """构造当前 Agent 调用使用的 system prompt。"""
 
     context_snapshot = build_context_snapshot(session_scope, prompt)
-    selected_skills, skill_prompt = build_skill_prompt(prompt)
+    selected_skills, skill_prompt = build_skill_prompt(prompt, decision_plan.selected_skills if decision_plan is not None else None)
     selected_skill_names = ", ".join(skill.name for skill in selected_skills) or "无"
+    decision_text = render_decision_plan(decision_plan)
 
     system_template = load_prompt_fragment("system")
     rules = load_prompt_fragment("rules")
@@ -81,6 +84,8 @@ def build_system_prompt(prompt: str, session_scope: str | None = None) -> str:
 本轮命中的 skill：{selected_skill_names}
 
 {skill_prompt}
+
+{decision_text}
 """.strip()
 
     rules_text = rules if rules else """
@@ -185,6 +190,7 @@ async def run_agent(
     uploaded_file: Any | None = None,
     session_scope: str | None = None,
     channel: str | None = None,
+    decision_plan: DecisionPlan | None = None,
 ) -> str:
     """运行一次 Claude Agent，并负责 session 与对话记录落盘。"""
 
@@ -215,7 +221,7 @@ async def run_agent(
         },
         cwd=str(WORKSPACE_DIR),
         tools=[],
-        system_prompt=build_system_prompt(prompt, session_scope),
+        system_prompt=build_system_prompt(prompt, session_scope, decision_plan),
         mcp_servers={"hiclaw": tool_server},
         allowed_tools=allowed_tools,
         hooks=build_tool_hooks(sender, target_id, conversation),
@@ -237,7 +243,7 @@ async def run_agent(
                     },
                     cwd=str(WORKSPACE_DIR),
                     tools=[],
-                    system_prompt=build_system_prompt(prompt, session_scope),
+                    system_prompt=build_system_prompt(prompt, session_scope, decision_plan),
                     mcp_servers={"hiclaw": tool_server},
                     allowed_tools=allowed_tools,
                     hooks=build_tool_hooks(sender, target_id, conversation),

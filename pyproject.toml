@@ -34,17 +34,18 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = [
     "src/hiclaw",
+    "src/hiclaw/agents",
     "src/hiclaw/capabilities",
-    "src/hiclaw/core",
     "src/hiclaw/channels",
     "src/hiclaw/channels/telegram",
     "src/hiclaw/channels/feishu",
-    "src/hiclaw/agents",
-    "src/hiclaw/memory",
-    "src/hiclaw/tasks",
+    "src/hiclaw/core",
+    "src/hiclaw/decision",
     "src/hiclaw/media",
-    "src/hiclaw/skills",
+    "src/hiclaw/memory",
     "src/hiclaw/monitor",
+    "src/hiclaw/skills",
+    "src/hiclaw/tasks",
 ]
 
 [tool.ruff]

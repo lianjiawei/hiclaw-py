@@ -13,6 +13,7 @@ from tavily import TavilyClient
 import hiclaw.config as config
 from hiclaw.core.confirmation import ToolConfirmationRequest, has_session_tool_grant, request_tool_confirmation
 from hiclaw.core.delivery import MessageSender, send_sender_file, send_sender_text
+from hiclaw.decision.trace import record_tool_trace_finish, record_tool_trace_start
 from hiclaw.core.types import ConversationRef
 from hiclaw.tasks.repository import cancel_scheduled_task_record, list_scheduled_task_records
 from hiclaw.tasks.service import create_scheduled_task
@@ -872,11 +873,23 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: ToolContext) -
     spec = get_tool_spec(name)
     if spec is None:
         return _error_result(f"错误：未知工具 {name}。")
+    record_tool_trace_start(
+        ctx.session_scope,
+        name=spec.name,
+        category=spec.category,
+        risk_level=spec.risk_level,
+        summary=spec.build_summary(arguments),
+        arguments=arguments,
+    )
     if spec.requires_confirmation() and ctx.enforce_confirmations:
         if ctx.session_scope and has_session_tool_grant(ctx.session_scope, spec.name):
-            return await spec.handler(arguments, ctx)
+            result = await spec.handler(arguments, ctx)
+            record_tool_trace_finish(ctx.session_scope, name=spec.name, success=not result.is_error, result_excerpt=result.to_text())
+            return result
         if ctx.sender is None:
-            return _error_result(f"错误：工具 {name} 需要确认，但当前上下文无法发起确认。")
+            result = _error_result(f"错误：工具 {name} 需要确认，但当前上下文无法发起确认。")
+            record_tool_trace_finish(ctx.session_scope, name=spec.name, success=False, result_excerpt=result.to_text())
+            return result
         prompt = spec.build_confirmation_prompt(arguments) or f"请确认是否执行工具 `{name}`。"
         approved = await request_tool_confirmation(
             ctx.sender,
@@ -892,10 +905,16 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: ToolContext) -
             ),
         )
         if approved is None:
-            return _error_result(f"错误：当前通道暂不支持执行前确认，未执行工具 {name}。")
+            result = _error_result(f"错误：当前通道暂不支持执行前确认，未执行工具 {name}。")
+            record_tool_trace_finish(ctx.session_scope, name=spec.name, success=False, result_excerpt=result.to_text())
+            return result
         if not approved:
-            return _error_result(f"已取消执行工具 {name}。")
-    return await spec.handler(arguments, ctx)
+            result = _error_result(f"已取消执行工具 {name}。")
+            record_tool_trace_finish(ctx.session_scope, name=spec.name, success=False, result_excerpt=result.to_text())
+            return result
+    result = await spec.handler(arguments, ctx)
+    record_tool_trace_finish(ctx.session_scope, name=spec.name, success=not result.is_error, result_excerpt=result.to_text())
+    return result
 
 
 _REGISTRY, _REGISTRY_STATUS = build_tool_registry()

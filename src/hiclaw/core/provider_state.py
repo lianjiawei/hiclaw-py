@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
 from hiclaw.config import DATA_DIR, AGENT_PROVIDER
 
 

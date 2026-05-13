@@ -7,6 +7,8 @@
     metricChannel: document.getElementById("metricChannel"),
     activeRunsBadge: document.getElementById("activeRunsBadge"),
     runList: document.getElementById("runList"),
+    agentList: document.getElementById("agentList"),
+    eventList: document.getElementById("eventList"),
   };
 
   function setText(node, value) {
@@ -56,8 +58,32 @@
       .join("");
   }
 
+  function buildAgentListHtml(agents) {
+    if (!agents.length) {
+      return '<div class="run-item"><strong>No cluster agents</strong><span>当前未启用或未进入 cluster 协作。</span></div>';
+    }
+
+    return agents
+      .map((agent) => `<div class="run-item"><strong>${agent.name || agent.agent_id}</strong><span>${agent.role || "agent"} · ${agent.status || "idle"}</span><span>${agent.summary || "暂无摘要"}</span></div>`)
+      .join("");
+  }
+
+  function buildEventListHtml(events) {
+    if (!events.length) {
+      return '<div class="run-item"><strong>No events</strong><span>协作时间线会显示在这里。</span></div>';
+    }
+
+    return events
+      .slice(-8)
+      .reverse()
+      .map((event) => `<div class="run-item"><strong>${event.summary || event.kind || "event"}</strong><span>${event.agent_id || "system"}</span><span>${event.detail || event.created_at || ""}</span></div>`)
+      .join("");
+  }
+
   function updateDashboardUi(snapshot) {
     const agentData = snapshot.agent || {};
+    const agents = Array.isArray(snapshot.agents) ? snapshot.agents : [];
+    const cluster = snapshot.cluster || {};
     const state = agentData.state || "idle";
     const runs = Array.isArray(agentData.active_runs) ? agentData.active_runs : [];
 
@@ -70,6 +96,12 @@
 
     if (ui.runList) {
       ui.runList.innerHTML = buildRunListHtml(runs);
+    }
+    if (ui.agentList) {
+      ui.agentList.innerHTML = buildAgentListHtml(agents);
+    }
+    if (ui.eventList) {
+      ui.eventList.innerHTML = buildEventListHtml(Array.isArray(cluster.events) ? cluster.events : []);
     }
   }
 

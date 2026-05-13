@@ -61,6 +61,8 @@ from hiclaw.skills.store import get_skill, list_skills
 from hiclaw.media.speech import SpeechRecognitionError, transcribe_voice
 from hiclaw.channels.telegram.formatting import format_telegram_text
 from hiclaw.core.provider_state import get_provider, set_provider
+from hiclaw.decision.render import render_decision_plan_debug
+from hiclaw.decision.router import build_decision_plan
 
 logger = logging.getLogger(__name__)
 
@@ -391,7 +393,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "我可以回答问题、处理文字、图片和语音消息，使用 Claude 内置工具，操作工作区，并继续之前保存的会话。\n"
         "还支持定时任务，例如“30秒后提醒我喝水”“每天下午3点提醒我站起来活动一下”。\n"
         "可以使用 /memory 查看长期记忆，使用 /reset 清空当前会话。\n"
-        "使用 /skills 查看当前可用的 skills，/tools 查看当前可用工具，/workflows 查看当前可用 workflow。\n"
+        "使用 /skills 查看当前可用的 skills，/tools 查看当前可用工具，/workflows 查看当前可用 workflow，/plan 查看路由计划。\n"
         "使用 /grants 查看当前会话工具授权，/revoke 工具名 撤销自动授权。\n"
         "使用 /schedule_in、/tasks、/cancel 管理定时任务。"
     )
@@ -617,6 +619,25 @@ async def show_workflows(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await reply_plain_text(update, detail)
 
 
+async def show_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    if not is_owner(update):
+        return
+    request_text = " ".join(context.args).strip()
+    if not request_text:
+        await reply_plain_text(update, "用法：/plan 这里填写要分析的请求")
+        return
+    conversation = build_telegram_conversation(update)
+    plan = await build_decision_plan(
+        prompt=request_text,
+        provider=get_provider(),
+        session_scope=conversation.session_scope,
+        channel=conversation.channel,
+    )
+    await reply_plain_text(update, render_decision_plan_debug(plan))
+
+
 async def schedule_in(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """通过命令创建一个单次定时任务。"""
 
@@ -724,6 +745,7 @@ async def post_init(application: Application) -> None:
         BotCommand("skills", "查看可用技能"),
         BotCommand("tools", "查看可用工具"),
         BotCommand("workflows", "查看工作流"),
+        BotCommand("plan", "查看当前路由计划"),
         BotCommand("grants", "查看会话工具授权"),
         BotCommand("revoke", "撤销工具授权"),
         BotCommand("memory", "查看长期记忆"),
@@ -769,6 +791,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("skills", show_skills))
     app.add_handler(CommandHandler("tools", show_tools))
     app.add_handler(CommandHandler("workflows", show_workflows))
+    app.add_handler(CommandHandler("plan", show_plan))
     app.add_handler(CommandHandler("grants", show_grants))
     app.add_handler(CommandHandler("revoke", revoke_grant))
     app.add_handler(CommandHandler("reset", reset_session))

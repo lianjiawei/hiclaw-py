@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hiclaw Pixel Office V2</title>
   <base href="/v2/">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=cluster-v2-2">
 </head>
 <body>
   <div class="v2-shell">
@@ -46,6 +46,22 @@
         </div>
         <div class="v2-run-list" id="v2RunList"></div>
       </section>
+
+      <section class="v2-card">
+        <div class="v2-card-head">
+          <p class="v2-label">Cluster Agents</p>
+          <span class="v2-run-badge" id="v2ClusterAgentsBadge">0</span>
+        </div>
+        <div class="v2-run-list" id="v2AgentList"></div>
+      </section>
+
+      <section class="v2-card">
+        <div class="v2-card-head">
+          <p class="v2-label">Cluster Timeline</p>
+          <span class="v2-run-badge" id="v2ClusterStateBadge">IDLE</span>
+        </div>
+        <div class="v2-run-list" id="v2EventList"></div>
+      </section>
     </aside>
 
     <main class="v2-main">
@@ -67,8 +83,8 @@
     </main>
   </div>
 
-  <script src="./dashboard-ui.js"></script>
-  <script src="./office-engine.js"></script>
-  <script src="./app.js"></script>
+  <script src="./dashboard-ui.js?v=cluster-v2-2"></script>
+  <script src="./office-engine.js?v=cluster-v2-2"></script>
+  <script src="./app.js?v=cluster-v2-2"></script>
 </body>
 </html>

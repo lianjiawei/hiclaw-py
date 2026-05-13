@@ -10,6 +10,10 @@
     channel: document.getElementById("v2Channel"),
     activeRunsBadge: document.getElementById("v2ActiveRunsBadge"),
     runList: document.getElementById("v2RunList"),
+    clusterAgentsBadge: document.getElementById("v2ClusterAgentsBadge"),
+    clusterStateBadge: document.getElementById("v2ClusterStateBadge"),
+    agentList: document.getElementById("v2AgentList"),
+    eventList: document.getElementById("v2EventList"),
   };
 
   function setText(node, value) {
@@ -57,8 +61,32 @@
       .join("");
   }
 
+  function buildAgentListHtml(agents) {
+    if (!agents.length) {
+      return '<div class="v2-run-item"><strong>No cluster agents</strong><span>Cluster mode is idle or disabled.</span></div>';
+    }
+
+    return agents
+      .map((agent) => `<div class="v2-run-item"><strong>${agent.name || agent.agent_id}</strong><span>${agent.role || "agent"} · ${agent.status || "idle"}</span><span>${agent.summary || "No summary"}</span></div>`)
+      .join("");
+  }
+
+  function buildEventListHtml(events) {
+    if (!events.length) {
+      return '<div class="v2-run-item"><strong>No collaboration events</strong><span>The cluster timeline will appear here.</span></div>';
+    }
+
+    return events
+      .slice(-8)
+      .reverse()
+      .map((event) => `<div class="v2-run-item"><strong>${event.summary || event.kind || "event"}</strong><span>${event.agent_id || "system"}</span><span>${event.detail || event.created_at || ""}</span></div>`)
+      .join("");
+  }
+
   function updateDashboardUi(snapshot) {
     const agentData = snapshot.agent || {};
+    const cluster = snapshot.cluster || {};
+    const agents = Array.isArray(snapshot.agents) ? snapshot.agents.filter((agent) => agent && agent.role !== "primary") : [];
     const state = agentData.state || "idle";
     const runs = Array.isArray(agentData.active_runs) ? agentData.active_runs : [];
     const palette = {
@@ -80,9 +108,17 @@
     setText(ui.channel, agentData.last_channel || "-");
     setText(ui.lastActive, formatTime(agentData.last_active_at));
     setText(ui.activeRunsBadge, String(agentData.active_runs_count || 0));
+    setText(ui.clusterAgentsBadge, String(agents.length || 0));
+    setText(ui.clusterStateBadge, String(cluster.state || "idle").toUpperCase());
 
     if (ui.runList) {
       ui.runList.innerHTML = buildRunListHtml(runs);
+    }
+    if (ui.agentList) {
+      ui.agentList.innerHTML = buildAgentListHtml(agents);
+    }
+    if (ui.eventList) {
+      ui.eventList.innerHTML = buildEventListHtml(Array.isArray(cluster.events) ? cluster.events : []);
     }
   }
 

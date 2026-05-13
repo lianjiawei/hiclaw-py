@@ -5,7 +5,8 @@ from datetime import datetime
 from threading import Lock
 from typing import Any
 
-from hiclaw.config import MONITOR_ACTIVITY_FILE
+from hiclaw.config import AGENT_CLUSTER_MAX_EVENTS, MONITOR_ACTIVITY_FILE
+from hiclaw.cluster.store import build_cluster_projection
 from hiclaw.core.types import ConversationRef
 
 _STATE_LOCK = Lock()
@@ -25,7 +26,19 @@ DEFAULT_AGENT_ACTIVITY: dict[str, Any] = {
         "last_error": "",
         "last_channel": "",
         "updated_at": "",
-    }
+    },
+    "agents": {},
+    "cluster": {
+        "enabled": False,
+        "cluster_id": "",
+        "state": "idle",
+        "objective": "",
+        "active_agents": [],
+        "planned_steps": [],
+        "events": [],
+        "last_event_at": "",
+        "updated_at": "",
+    },
 }
 
 
@@ -84,6 +97,40 @@ def _compact_text(text: str | None, max_length: int = 120) -> str:
     return normalized[: max_length - 3] + "..."
 
 
+def _sync_named_agent(state: dict[str, Any], agent_id: str, *, name: str, role: str, status: str, summary: str = "") -> None:
+    agents = dict(state.get("agents") or {})
+    previous = dict(agents.get(agent_id) or {})
+    previous.update(
+        {
+            "agent_id": agent_id,
+            "name": name,
+            "role": role,
+            "status": status,
+            "summary": _compact_text(summary, 180),
+            "updated_at": _now_iso(),
+        }
+    )
+    agents[agent_id] = previous
+    state["agents"] = agents
+
+
+def _append_cluster_event(state: dict[str, Any], *, cluster_id: str, kind: str, agent_id: str, summary: str, detail: str = "") -> None:
+    cluster = state["cluster"]
+    events = list(cluster.get("events") or [])
+    events.append(
+        {
+            "cluster_id": cluster_id,
+            "kind": kind,
+            "agent_id": agent_id,
+            "summary": _compact_text(summary, 120),
+            "detail": _compact_text(detail, 220),
+            "created_at": _now_iso(),
+        }
+    )
+    cluster["events"] = events[-AGENT_CLUSTER_MAX_EVENTS:]
+    cluster["last_event_at"] = _now_iso()
+
+
 def _ensure_state_file() -> None:
     MONITOR_ACTIVITY_FILE.parent.mkdir(parents=True, exist_ok=True)
     if not MONITOR_ACTIVITY_FILE.exists():
@@ -101,6 +148,12 @@ def load_agent_activity_state() -> dict[str, Any]:
         merged_agent = merged["agent"]
         merged_agent.update(raw.get("agent") or {})
         merged_agent["active_runs"] = dict(merged_agent.get("active_runs") or {})
+        merged["agents"] = dict(raw.get("agents") or {})
+        merged_cluster = merged["cluster"]
+        merged_cluster.update(raw.get("cluster") or {})
+        merged_cluster["active_agents"] = list(merged_cluster.get("active_agents") or [])
+        merged_cluster["planned_steps"] = list(merged_cluster.get("planned_steps") or [])
+        merged_cluster["events"] = list(merged_cluster.get("events") or [])
         _prune_stale_runs(merged_agent)
         return merged
 
@@ -109,7 +162,10 @@ def save_agent_activity_state(state: dict[str, Any]) -> None:
     _ensure_state_file()
     payload = load_agent_activity_state()
     payload["agent"].update(state.get("agent") or {})
+    payload["agents"] = dict(state.get("agents") or payload.get("agents") or {})
+    payload["cluster"].update(state.get("cluster") or {})
     payload["agent"]["updated_at"] = _now_iso()
+    payload["cluster"]["updated_at"] = _now_iso()
     with _STATE_LOCK:
         MONITOR_ACTIVITY_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -150,6 +206,7 @@ def mark_agent_run_started(conversation: ConversationRef, prompt: str) -> None:
                 "active_runs": active_runs,
             }
         )
+        _sync_named_agent(state, "main", name="Main Agent", role="primary", status="working", summary=latest_run["prompt"])
 
     _update_state(mutator)
 
@@ -194,6 +251,7 @@ def mark_agent_tool_started(conversation: ConversationRef, tool_name: str, tool_
         )
         if run.get("prompt"):
             agent["current_task"] = run["prompt"]
+        _sync_named_agent(state, "main", name="Main Agent", role="primary", status="working", summary=safe_tool_name or run.get("prompt") or "")
 
     _update_state(mutator)
 
@@ -223,6 +281,7 @@ def mark_agent_tool_finished(conversation: ConversationRef, tool_name: str, tool
                 "active_runs": active_runs,
             }
         )
+        _sync_named_agent(state, "main", name="Main Agent", role="primary", status="working" if active_runs else "idle", summary=safe_status or tool_name)
 
     _update_state(mutator)
 
@@ -250,6 +309,7 @@ def mark_agent_waiting(conversation: ConversationRef, waiting_text: str | None =
         )
         if safe_text:
             agent["current_task"] = safe_text
+        _sync_named_agent(state, "main", name="Main Agent", role="primary", status="waiting", summary=safe_text)
 
     _update_state(mutator)
 
@@ -272,6 +332,109 @@ def mark_agent_run_finished(conversation: ConversationRef, error: str | None = N
                 "last_error": _compact_text(error, 180) if error else "",
                 "active_runs": active_runs,
             }
+        )
+        _sync_named_agent(state, "main", name="Main Agent", role="primary", status="error" if error else ("working" if active_runs else "idle"), summary=error or str((latest_run or {}).get("prompt") or ""))
+
+    _update_state(mutator)
+
+
+def mark_cluster_run_started(
+    conversation: ConversationRef,
+    cluster_id: str,
+    objective: str,
+    agents: tuple[Any, ...],
+    planned_steps: tuple[str, ...],
+) -> None:
+    now = _now_iso()
+
+    def mutator(state: dict[str, Any]) -> None:
+        cluster = state["cluster"]
+        cluster.update(
+            {
+                "enabled": True,
+                "cluster_id": cluster_id,
+                "state": "working",
+                "objective": _compact_text(objective, 180),
+                "active_agents": [agent.agent_id for agent in agents],
+                "planned_steps": list(planned_steps),
+                "last_event_at": now,
+            }
+        )
+        for agent in agents:
+            _sync_named_agent(state, agent.agent_id, name=agent.name, role=agent.role, status="queued", summary=agent.objective)
+
+    _update_state(mutator)
+
+
+def mark_cluster_event(
+    conversation: ConversationRef,
+    cluster_id: str,
+    *,
+    kind: str,
+    agent_id: str,
+    summary: str,
+    detail: str = "",
+) -> None:
+    def mutator(state: dict[str, Any]) -> None:
+        _append_cluster_event(state, cluster_id=cluster_id, kind=kind, agent_id=agent_id, summary=summary, detail=detail)
+
+    _update_state(mutator)
+
+
+def mark_cluster_agent_started(conversation: ConversationRef, cluster_id: str, agent_id: str, summary: str) -> None:
+    def mutator(state: dict[str, Any]) -> None:
+        agents = dict(state.get("agents") or {})
+        current = dict(agents.get(agent_id) or {})
+        _sync_named_agent(
+            state,
+            agent_id,
+            name=str(current.get("name") or agent_id.title()),
+            role=str(current.get("role") or agent_id),
+            status="working",
+            summary=summary,
+        )
+        _append_cluster_event(state, cluster_id=cluster_id, kind="agent_started", agent_id=agent_id, summary=summary)
+
+    _update_state(mutator)
+
+
+def mark_cluster_agent_finished(conversation: ConversationRef, cluster_id: str, agent_id: str, summary: str) -> None:
+    def mutator(state: dict[str, Any]) -> None:
+        agents = dict(state.get("agents") or {})
+        current = dict(agents.get(agent_id) or {})
+        _sync_named_agent(
+            state,
+            agent_id,
+            name=str(current.get("name") or agent_id.title()),
+            role=str(current.get("role") or agent_id),
+            status="done",
+            summary=summary,
+        )
+        _append_cluster_event(state, cluster_id=cluster_id, kind="agent_finished", agent_id=agent_id, summary=summary)
+
+    _update_state(mutator)
+
+
+def mark_cluster_run_finished(conversation: ConversationRef, cluster_id: str, success: bool, summary: str) -> None:
+    now = _now_iso()
+
+    def mutator(state: dict[str, Any]) -> None:
+        cluster = state["cluster"]
+        cluster.update(
+            {
+                "enabled": True,
+                "cluster_id": cluster_id,
+                "state": "idle" if success else "error",
+                "last_event_at": now,
+            }
+        )
+        _append_cluster_event(
+            state,
+            cluster_id=cluster_id,
+            kind="cluster_finished",
+            agent_id="planner",
+            summary="Cluster finished" if success else "Cluster failed",
+            detail=summary,
         )
 
     _update_state(mutator)
@@ -332,6 +495,7 @@ def build_agent_activity_snapshot() -> dict[str, Any]:
     state = load_agent_activity_state()
     agent = state["agent"]
     active_runs = list((agent.get("active_runs") or {}).values())
+    cluster_projection = build_cluster_projection()
     return {
         "agent": {
             "agent_id": str(agent.get("agent_id") or "main"),
@@ -346,5 +510,7 @@ def build_agent_activity_snapshot() -> dict[str, Any]:
             "active_runs_count": len(active_runs),
             "active_runs": active_runs,
             "updated_at": str(agent.get("updated_at") or ""),
-        }
+        },
+        "agents": cluster_projection["agents"],
+        "cluster": cluster_projection["cluster"],
     }

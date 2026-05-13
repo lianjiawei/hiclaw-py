@@ -50,6 +50,8 @@ from hiclaw.config import (
 )
 from hiclaw.channels.feishu.formatting import markdown_to_lark_md
 from hiclaw.core.provider_state import get_provider, set_provider
+from hiclaw.decision.render import render_decision_plan_debug
+from hiclaw.decision.router import build_decision_plan
 from hiclaw.media.speech import SpeechRecognitionError, transcribe_voice
 from hiclaw.media.store import FilePayload, PhotoPayload, save_uploaded_file, save_voice_bytes
 from hiclaw.config import UPLOAD_VOICES_DIR
@@ -471,9 +473,24 @@ async def handle_message(client: lark.Client, incoming: FeishuIncomingMessage) -
             "你好，我是你的机器人。\n\n"
             "我可以回答问题、处理文字、图片和文件消息，使用模型内置工具，操作工作区，并继续之前保存的会话。\n"
             "支持定时任务、长期记忆管理和自定义技能。\n"
-            "使用 /skills 查看可用技能，/tools 查看可用工具，/workflows 查看可用 workflow，/memory 查看长期记忆，/reset 清空当前会话。\n"
+            "使用 /skills 查看可用技能，/tools 查看可用工具，/workflows 查看可用 workflow，/plan 查看路由计划，/memory 查看长期记忆，/reset 清空当前会话。\n"
             "使用 /grants 查看当前会话工具授权，/revoke 工具名 撤销自动授权。"
         )
+        return
+
+    if lower_text.startswith("/plan"):
+        args = incoming.text.strip().split(maxsplit=1)
+        if len(args) == 1 or not args[1].strip():
+            await send_text_message(client, incoming.chat_id, "用法：/plan 这里填写要分析的请求")
+        else:
+            session_scope = build_session_scope(incoming)
+            plan = await build_decision_plan(
+                prompt=args[1].strip(),
+                provider=get_provider(),
+                session_scope=session_scope,
+                channel="feishu",
+            )
+            await send_text_message(client, incoming.chat_id, render_decision_plan_debug(plan))
         return
 
     if lower_text == "/grants":

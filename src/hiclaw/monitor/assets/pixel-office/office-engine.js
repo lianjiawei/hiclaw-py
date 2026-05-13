@@ -48,6 +48,11 @@
     { x: 522, y: 468 },
     { x: 768, y: 460 },
   ];
+  const clusterZones = {
+    planner: { seatIndex: 1, idle: { x: 344, y: 420 }, waiting: { x: 300, y: 452 } },
+    executor: { seatIndex: 0, idle: { x: 642, y: 420 }, waiting: { x: 612, y: 452 } },
+    reviewer: { seatIndex: 2, idle: { x: 520, y: 510 }, waiting: { x: 540, y: 470 } },
+  };
 
   const agents = new Map();
 
@@ -106,6 +111,10 @@
       route: [],
       routeIndex: 0,
       helper: false,
+      role: "primary",
+      bubbleText: "",
+      bubbleCooldown: 0,
+      eventKind: "",
     };
     agents.set(id, agent);
     return agent;
@@ -137,6 +146,56 @@
     return { band: "#ff9ec2", badge: "#ffe3ef", glow: "rgba(255,158,194,0.24)" };
   }
 
+  function mapClusterStatus(status) {
+    const value = String(status || "idle").toLowerCase();
+    if (value === "working") return "working";
+    if (value === "waiting") return "waiting";
+    if (value === "error") return "waiting";
+    return "idle";
+  }
+
+  function actionForClusterAgent(role, status, summary) {
+    if (status === "waiting") return "waiting";
+    const text = `${role} ${summary || ""}`.toLowerCase();
+    if (text.includes("read") || text.includes("分析") || text.includes("检查")) return "reading";
+    if (text.includes("write") || text.includes("修改") || text.includes("执行")) return "writing";
+    if (text.includes("search") || text.includes("调研")) return "researching";
+    if (role === "planner") return "reading";
+    if (role === "reviewer") return "researching";
+    return status === "working" ? "working" : "idle";
+  }
+
+  function skinForRole(role, index) {
+    if (role === "planner") {
+      return { band: "#8ea3ff", badge: "#eef3ff", glow: "rgba(142,163,255,0.28)" };
+    }
+    if (role === "executor") {
+      return { band: "#63e6be", badge: "#e6fff6", glow: "rgba(99,230,190,0.26)" };
+    }
+    if (role === "reviewer") {
+      return { band: "#ff9ec2", badge: "#ffe8f1", glow: "rgba(255,158,194,0.24)" };
+    }
+    return buildSkinForChannel(index % 2 === 0 ? "telegram" : "feishu");
+  }
+
+  function bubbleForEvent(event, role) {
+    if (!event) return "";
+    const kind = String(event.kind || "").toLowerCase();
+    if (kind === "task_dispatched") return role === "planner" ? "PLAN" : "TASK";
+    if (kind === "agent_started") return role === "executor" ? "GO" : "SYNC";
+    if (kind === "agent_finished") return role === "reviewer" ? "CHECK" : "DONE";
+    if (kind === "agent_note") return "NOTE";
+    if (kind === "cluster_finished") return "OK";
+    return "MSG";
+  }
+
+  function summarizeEvent(event) {
+    if (!event) return "";
+    const summary = String(event.summary || "").trim();
+    const detail = String(event.detail || "").trim();
+    return summary || detail;
+  }
+
   function assignRoutedTarget(agent, x, y) {
     agent.route = [
       { x: clamp(agent.x, office.walkMinX, office.walkMaxX), y: office.corridorY },
@@ -151,7 +210,60 @@
   function syncOfficeState(snapshot) {
     const agentData = snapshot.agent || {};
     const activeRuns = Array.isArray(agentData.active_runs) ? agentData.active_runs : [];
+    const cluster = snapshot.cluster || {};
+    const clusterAgents = Array.isArray(snapshot.agents) ? snapshot.agents.filter((item) => item && item.role !== "primary") : [];
     const activeIds = new Set();
+
+    if (cluster.enabled && clusterAgents.length) {
+      const events = Array.isArray(cluster.events) ? cluster.events : [];
+      clusterAgents.forEach((item, index) => {
+        const workerId = item.agent_id || `cluster-${index}`;
+        const worker = ensureAgent(workerId, index);
+        const role = String(item.role || "agent").toLowerCase();
+        const zone = clusterZones[role] || { seatIndex: index % seats.length, idle: { x: 520, y: 450 }, waiting: { x: 520, y: 470 } };
+        const roleEvent = [...events].reverse().find((event) => String(event.agent_id || "") === workerId);
+        worker.state = mapClusterStatus(item.status);
+        worker.currentTool = "";
+        worker.action = actionForClusterAgent(item.role, worker.state, item.summary || "");
+        worker.palette = roleColors[index % roleColors.length];
+        worker.task = item.summary || cluster.objective || "";
+        worker.channel = item.role || "cluster";
+        worker.label = item.name || workerId;
+        worker.role = role;
+        worker.seatIndex = zone.seatIndex;
+        worker.skin = skinForRole(role, index);
+        worker.helper = false;
+        worker.bubbleText = bubbleForEvent(roleEvent, role);
+        worker.bubbleCooldown = worker.bubbleText ? 2600 : Math.max(0, worker.bubbleCooldown || 0);
+        worker.eventKind = String((roleEvent || {}).kind || "");
+        worker.eventSummary = summarizeEvent(roleEvent);
+        activeIds.add(workerId);
+      });
+
+      for (const [id, worker] of agents.entries()) {
+        if (!activeIds.has(id)) {
+          worker.state = "offline";
+          worker.action = "offline";
+          worker.currentTool = "";
+          worker.task = "";
+        }
+      }
+
+      for (const worker of agents.values()) {
+        if (worker.state === "working") {
+          const seat = seats[worker.seatIndex] || office.seat;
+          assignRoutedTarget(worker, seat.x, seat.y);
+        } else if (worker.state === "waiting") {
+          const zone = clusterZones[worker.role] || clusterZones.executor;
+          assignRoutedTarget(worker, zone.waiting.x, zone.waiting.y);
+        } else if (worker.state === "idle") {
+          const zone = clusterZones[worker.role] || clusterZones.executor;
+          assignRoutedTarget(worker, zone.idle.x, zone.idle.y);
+          worker.helper = false;
+        }
+      }
+      return;
+    }
 
     const main = ensureAgent("main", 0);
     main.state = agentData.state || "idle";
@@ -283,6 +395,7 @@
     agent.x = clamp(agent.x, office.walkMinX, office.walkMaxX);
     agent.y = clamp(agent.y, office.floorTop + 164, office.floorBottom - 32);
     agent.typingPhase += dt * 0.02;
+    agent.bubbleCooldown = Math.max(0, (agent.bubbleCooldown || 0) - dt);
   }
 
   function drawBackground() {
@@ -361,6 +474,14 @@
     ctx.fillText(text, bubbleX + 11, bubbleY + 18);
   }
 
+  function drawEventCaption(agent) {
+    if (!agent.eventSummary) return;
+    const text = String(agent.eventSummary).slice(0, 18);
+    ctx.fillStyle = "rgba(245,247,255,0.92)";
+    ctx.font = "10px monospace";
+    ctx.fillText(text, Math.round(agent.x) - 10, Math.round(agent.y) - 84);
+  }
+
   function getCharacterFrame(agent) {
     const action = agent.action || (agent.state === "waiting" ? "waiting" : agent.state === "working" ? "working" : "idle");
     const frames = (sprites.characters && sprites.characters[action]) || (sprites.characters && sprites.characters.idle) || [];
@@ -375,6 +496,14 @@
     ctx.fillRect(x + 4, baseY + 4, 34, 46);
     drawPixelRect(x + 10, baseY + 5, 22, 3, skin.band);
     drawPixelRect(x + 24, baseY + 27, 6, 6, skin.badge);
+    if (agent.role === "planner") {
+      drawPixelRect(x + 7, baseY + 8, 4, 10, "#eef3ff");
+    } else if (agent.role === "executor") {
+      drawPixelRect(x + 32, baseY + 30, 4, 10, "#e6fff6");
+    } else if (agent.role === "reviewer") {
+      drawPixelRect(x + 7, baseY + 30, 4, 4, "#ffe8f1");
+      drawPixelRect(x + 31, baseY + 30, 4, 4, "#ffe8f1");
+    }
     if (agent.helper) {
       drawPixelRect(x + 8, baseY + 30, 4, 4, "#fef3a0");
       drawPixelRect(x + 30, baseY + 30, 4, 4, "#fef3a0");
@@ -405,7 +534,10 @@
       drawPixelRect(x + 12, baseY + 10, 20, 18, "#f3c8a5");
       drawPixelRect(x + 10, baseY + 28, 24, 18, agent.state === "working" ? "#66e6c2" : agent.palette.body);
     }
-    if (agent.state === "working") {
+    if (agent.bubbleText && agent.bubbleCooldown > 0) {
+      drawSpeechBubble(agent, agent.bubbleText);
+      drawEventCaption(agent);
+    } else if (agent.state === "working") {
       const bubble = agent.action === "reading" ? "READ" : agent.action === "writing" ? "WRITE" : agent.action === "running" ? "RUN" : agent.action === "researching" ? "SEARCH" : "WORK";
       drawSpeechBubble(agent, bubble);
     } else if (agent.state === "waiting") {
@@ -414,7 +546,8 @@
     }
     ctx.fillStyle = "#f5f7ff";
     ctx.font = "12px sans-serif";
-    ctx.fillText((agent.helper ? `assist ${agent.label}` : agent.label).slice(0, 14), x - 6, baseY + 76);
+    const labelText = agent.role && agent.role !== "primary" ? `${agent.role}:${agent.label}` : (agent.helper ? `assist ${agent.label}` : agent.label);
+    ctx.fillText(labelText.slice(0, 14), x - 6, baseY + 76);
   }
 
   function render() {

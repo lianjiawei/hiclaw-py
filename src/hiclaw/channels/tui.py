@@ -35,6 +35,8 @@ from hiclaw.core.response import AgentReply
 from hiclaw.config import PROJECT_ROOT, SHOW_TOOL_TRACE, TUI_OUTPUT_DIR, WORKSPACE_DIR
 from hiclaw.core.provider_state import get_provider, set_provider
 from hiclaw.core.delivery import DeliveryRouter
+from hiclaw.decision.render import render_decision_plan_debug
+from hiclaw.decision.router import build_decision_plan
 from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, should_auto_accept_memory_intent
 from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, clear_session_context, create_memory_metadata
 from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
@@ -94,6 +96,7 @@ COMMANDS = [
     CommandInfo("/skills", "查看可用技能"),
     CommandInfo("/tools", "查看可用工具"),
     CommandInfo("/workflows", "查看可用工作流"),
+    CommandInfo("/plan", "查看请求路由计划"),
     CommandInfo("/grants", "查看会话工具授权"),
     CommandInfo("/revoke", "撤销工具授权"),
     CommandInfo("/exit", "退出"),
@@ -427,6 +430,7 @@ def print_help() -> None:
         "/retry      重发上一条用户输入",
         "/reset      清空当前连续会话",
         "/provider   查看当前 Provider",
+        "/plan 文本   查看请求路由计划",
         "/grants     查看本会话工具授权",
         "/revoke 名   撤销某个工具授权",
         "",
@@ -521,6 +525,19 @@ def print_grants(session_scope: str) -> None:
     for grant in grants:
         lines.append(f"- {grant.tool_name} [{grant.risk_level}/{grant.category}] 授权于 {grant.granted_at}")
     print_message_block("Grants", "\n".join(lines), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Session grants"), accent=THEME_PRIMARY)
+
+
+async def print_plan(prompt: str, state: TuiState) -> None:
+    if not prompt.strip():
+        print_message_block("Plan", "用法：/plan 这里填写要分析的请求", subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), "Decision plan"), accent=THEME_MUTED)
+        return
+    plan = await build_decision_plan(
+        prompt=prompt,
+        provider=state.provider,
+        session_scope=state.session_scope,
+        channel="tui",
+    )
+    print_message_block("Plan", render_decision_plan_debug(plan), subtitle=build_meta_subtitle(datetime.now().strftime("%H:%M:%S"), state.provider), accent=THEME_PRIMARY)
 
 
 def print_matched_skills() -> None:
@@ -690,6 +707,11 @@ async def run_tui() -> None:
                 parts = prompt.split(maxsplit=1)
                 workflow_name = parts[1].strip() if len(parts) > 1 else None
                 print_workflows(workflow_name)
+                continue
+            if command.startswith("/plan"):
+                parts = prompt.split(maxsplit=1)
+                plan_prompt = parts[1].strip() if len(parts) > 1 else ""
+                await print_plan(plan_prompt, state)
                 continue
             if command == "/grants":
                 print_grants(state.session_scope)

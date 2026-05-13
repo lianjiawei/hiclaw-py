@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from hiclaw.config import AGENT_PROVIDER
 from hiclaw.core.provider_state import get_provider
 from hiclaw.core.delivery import MessageSender
+from hiclaw.decision.models import DecisionPlan
 from hiclaw.core.response import AgentReply
 from hiclaw.core.types import ConversationRef
 
@@ -68,6 +69,7 @@ async def run_agent(
     uploaded_file: Any | None = None,
     session_scope: str | None = None,
     channel: str | None = None,
+    decision_plan: DecisionPlan | None = None,
 ) -> AgentReply:
     """统一 Agent 调用入口，后续可以继续扩展更多 Provider。"""
 
@@ -99,13 +101,14 @@ async def run_agent(
                 uploaded_file=uploaded_file,
                 session_scope=session_scope,
                 channel=channel,
+                decision_plan=decision_plan,
             )
-            return AgentReply.from_text(text)
+            return AgentReply.from_text(text, provider=provider)
 
         if provider == "openai":
             from hiclaw.agents.openai import run_openai_agent
 
-            return await run_openai_agent(
+            reply = await run_openai_agent(
                 prompt=prompt,
                 sender=sender,
                 target_id=target_id,
@@ -115,7 +118,10 @@ async def run_agent(
                 uploaded_file=uploaded_file,
                 session_scope=session_scope,
                 channel=channel,
+                decision_plan=decision_plan,
             )
+            reply.provider = provider
+            return reply
 
         raise AgentServiceError(f"Unsupported AGENT_PROVIDER: {provider}")
     except AgentServiceError:

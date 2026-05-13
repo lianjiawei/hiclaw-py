@@ -308,6 +308,7 @@ def ensure_memory_files() -> None:
     CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
     LONG_TERM_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     MEMORY_CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
+    MEMORY_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     SESSION_SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
 
     if not CLAUDE_MEMORY_FILE.exists():
@@ -1302,7 +1303,7 @@ async def reflect_and_rewrite_memories() -> dict[str, Any]:
 
     reflection_template = _load_reflection_prompt()
     if reflection_template:
-        combined_prompt = reflection_template.format(INPUT_DATA=input_data)
+        combined_prompt = reflection_template.replace("{INPUT_DATA}", input_data)
     else:
         combined_prompt = (
             "你是 HiClaw 的夜间记忆反思器。"
