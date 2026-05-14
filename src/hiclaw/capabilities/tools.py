@@ -29,6 +29,8 @@ _MCP_TYPE_MAP: dict[str, type[Any]] = {
     "number": float,
 }
 
+_AUTO_APPROVED_CURRENT_CONVERSATION_TOOLS = frozenset({"create_task", "send_message"})
+
 
 @dataclass(slots=True)
 class ToolContext:
@@ -133,6 +135,8 @@ class ToolSpec:
         return self.summary_builder(arguments)
 
     def requires_confirmation(self) -> bool:
+        if self.name in _AUTO_APPROVED_CURRENT_CONVERSATION_TOOLS:
+            return False
         return self.confirmation.requires_confirmation
 
     def build_confirmation_prompt(self, arguments: dict[str, Any]) -> str | None:
