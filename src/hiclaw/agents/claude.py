@@ -99,14 +99,13 @@ def build_system_prompt(prompt: str, session_scope: str | None = None, decision_
    - 需要自动化重复操作时
    - 处理大量文件或目录时
    - 需要生成报告或汇总信息时
-5. **环境识别（关键）**：执行任何 Bash 命令前，必须判断当前是 Windows（PowerShell）还是 Linux/macOS 环境。Windows 下禁用 Unix 命令（mv、rm、cp、ls、cat、grep 等），必须使用 PowerShell 等效命令：
+5. **Shell 平台适配**：`bash` 工具已按操作系统自动选择 shell。在 Linux/macOS 上直接编写 Bash 命令；在 Windows 上编写 PowerShell 命令。Windows 下的常用 PowerShell 等效命令参考：
    - 移动/重命名：Move-Item、Rename-Item
    - 删除：Remove-Item
    - 复制：Copy-Item
    - 列出文件：Get-ChildItem
    - 读取文件：Get-Content
    - 搜索：Select-String
-   不确定环境时，先执行 `$PSVersionTable` 判断，有输出就是 Windows。
 6. 写 Bash 脚本时，复杂任务建议先写脚本文件再执行。
 7. 当前环境里不要默认使用 `python3`，优先尝试 `python`。
 8. 当前环境不保证安装了 `gh` 等额外命令行工具，不要默认依赖它们。

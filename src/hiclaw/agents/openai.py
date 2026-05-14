@@ -169,7 +169,7 @@ def build_openai_instructions(prompt: str, session_scope: str | None = None, dec
 6. 可以使用文件查看、编辑、任务管理和 Bash 工具。
 7. 如果工具足以回答问题，先调用工具，再基于工具结果给出最终回答。
 8. 如果工具不可用或没有必要，不要虚构工具结果。
-9. **环境识别（关键）**：执行 Bash 命令前，必须判断当前是 Windows（PowerShell）还是 Linux/macOS 环境。Windows 下禁用 Unix 命令（mv、rm、cp、ls、cat、grep），改用 PowerShell 等效命令（Move-Item、Remove-Item、Copy-Item、Get-ChildItem、Get-Content、Select-String）。不确定环境时执行 `$PSVersionTable`，有输出就是 Windows。
+9. **Shell 平台适配**：`bash` 工具已按操作系统自动选择 shell。在 Linux/macOS 上直接编写 Bash 命令；在 Windows 上编写 PowerShell 命令。Windows 下使用 PowerShell 等效命令（Move-Item、Remove-Item、Get-ChildItem、Get-Content、Select-String 等）。
 """.strip()
 
 

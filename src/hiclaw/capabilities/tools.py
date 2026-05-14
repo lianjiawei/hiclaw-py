@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import os
 import re
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -345,9 +347,21 @@ async def _handle_bash(args: dict[str, Any], _ctx: ToolContext) -> ToolResult:
         workdir = _resolve_workdir(str(args.get("workdir") or "").strip() or None)
     except ValueError as exc:
         return _error_result(f"错误：{exc}")
+
+    # 按宿主平台选择 shell
+    if os.name == "nt":
+        shell_cmd = ["powershell", "-NoProfile", "-Command", command]
+        shell_name = "powershell"
+    else:
+        bash_path = shutil.which("bash")
+        if bash_path is None:
+            return _error_result("错误：此系统上找不到 bash 可执行文件。")
+        shell_cmd = [bash_path, "-lc", command]
+        shell_name = f"bash ({bash_path})"
+
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", command],
+            shell_cmd,
             cwd=str(workdir),
             capture_output=True,
             text=True,
@@ -357,13 +371,28 @@ async def _handle_bash(args: dict[str, Any], _ctx: ToolContext) -> ToolResult:
         )
     except subprocess.TimeoutExpired:
         return _error_result(f"错误：命令执行超时（{timeout} 秒）。")
+    except (FileNotFoundError, OSError) as exc:
+        return _error_result(f"错误：shell 执行失败：{exc}")
+
     output = (result.stdout or "").strip()
     error = (result.stderr or "").strip()
-    parts = [f"退出码: {result.returncode}"]
+    truncated_out = len(output) > 6000
+    truncated_err = len(error) > 6000
+    parts = [
+        f"Shell: {shell_name}",
+        f"Workdir: {workdir}",
+        f"Exit code: {result.returncode}",
+    ]
     if output:
-        parts.append(f"STDOUT:\n{output[:6000]}")
+        out_text = output[:6000]
+        if truncated_out:
+            out_text += "\n（输出已截断）"
+        parts.append(f"STDOUT:\n{out_text}")
     if error:
-        parts.append(f"STDERR:\n{error[:6000]}")
+        err_text = error[:6000]
+        if truncated_err:
+            err_text += "\n（输出已截断）"
+        parts.append(f"STDERR:\n{err_text}")
     return _text_result("\n\n".join(parts))
 
 
