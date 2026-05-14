@@ -67,6 +67,10 @@ from hiclaw.decision.router import build_decision_plan
 logger = logging.getLogger(__name__)
 
 
+def _telegram_exc_info(exc: BaseException) -> tuple[type[BaseException], BaseException, object]:
+    return (type(exc), exc, exc.__traceback__)
+
+
 @dataclass(slots=True)
 class TelegramMessageSender:
     bot: object
@@ -115,7 +119,12 @@ async def reply_plain_text(update: Update, text: str) -> None:
     if not update.message:
         return
 
-    await update.message.reply_text(text, disable_web_page_preview=True)
+    try:
+        await update.message.reply_text(text, disable_web_page_preview=True)
+    except NetworkError as exc:
+        logger.warning("Telegram plain text reply failed because the network is unavailable", exc_info=_telegram_exc_info(exc))
+    except TelegramError as exc:
+        logger.warning("Telegram plain text reply failed", exc_info=_telegram_exc_info(exc))
 
 
 async def reply_formatted_text(update: Update, text: str) -> None:
@@ -134,6 +143,12 @@ async def reply_formatted_text(update: Update, text: str) -> None:
         except BadRequest:
             logger.warning("Telegram formatted reply failed, falling back to plain text", exc_info=True)
             await reply_plain_text(update, text)
+            return
+        except NetworkError as exc:
+            logger.warning("Telegram formatted reply failed because the network is unavailable", exc_info=_telegram_exc_info(exc))
+            return
+        except TelegramError as exc:
+            logger.warning("Telegram formatted reply failed", exc_info=_telegram_exc_info(exc))
             return
 
 
@@ -734,6 +749,10 @@ async def show_provider(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """兜底记录没有被局部 handler 处理的异常。"""
+
+    if isinstance(context.error, NetworkError):
+        logger.warning("Telegram network error outside a local handler", exc_info=_telegram_exc_info(context.error))
+        return
 
     logger.error("Unhandled exception in Telegram application", exc_info=context.error)
 

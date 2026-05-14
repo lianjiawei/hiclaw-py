@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pixel-office-core 预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #111827;
+        color: #e5e7eb;
+      }
+
+      body {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+      }
+
+      .sidebar {
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+        padding: 20px;
+        overflow: auto;
+      }
+
+      .stage {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+      }
+
+      #app {
+        width: 100%;
+        height: 100%;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 20px;
+      }
+
+      h2 {
+        margin: 20px 0 8px;
+        font-size: 14px;
+        color: #93c5fd;
+      }
+
+      p,
+      li {
+        font-size: 13px;
+        line-height: 1.6;
+        color: #cbd5e1;
+      }
+
+      code {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+
+      .panel {
+        margin-top: 14px;
+        padding: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .agent-state {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 10px;
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .agent-state h3 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        color: #f8fafc;
+      }
+
+      .agent-state-row {
+        display: grid;
+        grid-template-columns: 84px 1fr;
+        gap: 6px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #cbd5e1;
+      }
+
+      .agent-state-row span:first-child {
+        color: #93c5fd;
+      }
+
+      .buttons {
+        display: grid;
+        gap: 8px;
+      }
+
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        background: #2563eb;
+        color: white;
+        padding: 10px 12px;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      button.secondary {
+        background: #334155;
+      }
+
+      #log {
+        margin-top: 10px;
+        white-space: pre-wrap;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #a7f3d0;
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <h1>pixel-office-core</h1>
+      <p>这个页面用来检查我提取出来的独立模块是否符合你的预期。</p>
+
+      <div class="panel">
+        <h2>当前预览内容</h2>
+        <ul>
+          <li>默认办公室布局</li>
+          <li>角色素材渲染</li>
+          <li>地板 / 墙体 / 家具素材</li>
+          <li>模拟人物移动</li>
+          <li>点击角色事件</li>
+          <li>镜头跟随</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>交互</h2>
+        <div class="buttons">
+          <button id="toggleMove">暂停模拟移动</button>
+          <button id="zoomIn" class="secondary">放大场景</button>
+          <button id="zoomOut" class="secondary">缩小场景</button>
+          <button id="focusAgent1" class="secondary">镜头跟随 Agent 1</button>
+          <button id="focusAgent2" class="secondary">镜头跟随 Agent 2</button>
+          <button id="clearFocus" class="secondary">取消镜头跟随</button>
+          <button id="moveNow" class="secondary">立即随机移动一次</button>
+          <button id="stopAgent1" class="secondary">Agent 1 原地停下</button>
+          <button id="seatAgent1" class="secondary">Agent 1 立刻坐下</button>
+          <button id="sendAgent1ToSeat" class="secondary">Agent 1 回到工位</button>
+          <button id="wanderAgent1" class="secondary">Agent 1 自由移动</button>
+          <button id="modeWorking" class="secondary">Agent 1 工作中</button>
+          <button id="modeThinking" class="secondary">Agent 1 思考中</button>
+          <button id="modeWaiting" class="secondary">Agent 1 等待中</button>
+          <button id="modeBlocked" class="secondary">Agent 1 被阻塞</button>
+          <button id="modeIdle" class="secondary">Agent 1 空闲</button>
+          <button id="bubblePermission" class="secondary">Agent 1 显示请求气泡</button>
+          <button id="bubbleWaiting" class="secondary">Agent 2 显示完成气泡</button>
+          <button id="clearBubbles" class="secondary">清除所有气泡</button>
+        </div>
+        <div id="log"></div>
+      </div>
+
+      <div class="panel">
+        <h2>入口说明</h2>
+        <p>核心入口：</p>
+        <p><code>src/index.ts</code></p>
+        <p><code>src/pixelOffice.ts</code></p>
+        <p><code>src/browserAssetLoader.ts</code></p>
+      </div>
+
+      <div class="panel">
+        <h2>Agent 状态</h2>
+        <div id="agentStatePanel"></div>
+      </div>
+
+      <div class="panel">
+        <h2>工位诊断</h2>
+        <p>点击场景中的角色可切换诊断对象。</p>
+        <div id="diagnosticPanel"></div>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div id="app"></div>
+    </main>
+
+    <script type="module">
+      import { PixelOfficeController, loadAssetBundleFromBaseUrl } from './dist/index.js'
+
+      const app = document.getElementById('app')
+      const logEl = document.getElementById('log')
+      const agentStatePanel = document.getElementById('agentStatePanel')
+      const diagnosticPanel = document.getElementById('diagnosticPanel')
+      const office = new PixelOfficeController(app, { zoom: 5 })
+      const bundle = await loadAssetBundleFromBaseUrl('./public/assets')
+      let diagnosticAgentId = 1
+
+      office.loadAssets(bundle)
+      office.dispatch({
+        type: 'setAgents',
+        agents: [
+          { id: 1, label: 'Planner', palette: 0, isActive: true, currentTool: 'Plan' },
+          { id: 2, label: 'Researcher', palette: 1, isActive: false },
+          { id: 3, label: 'Writer', palette: 2, isActive: true, currentTool: 'Read' },
+          { id: 4, label: 'Runner', palette: 3, isActive: false }
+        ]
+      })
+
+      const movableAgentIds = [1, 2, 3, 4]
+      let moving = true
+      let timer = null
+
+      function log(message) {
+        const time = new Date().toLocaleTimeString()
+        logEl.textContent = `[${time}] ${message}\n` + logEl.textContent.slice(0, 1600)
+      }
+
+      function randomTile() {
+        const layout = office.officeState.getLayout()
+        return {
+          col: 1 + Math.floor(Math.random() * Math.max(1, layout.cols - 2)),
+          row: 1 + Math.floor(Math.random() * Math.max(1, layout.rows - 2))
+        }
+      }
+
+      function randomMove() {
+        const id = movableAgentIds[Math.floor(Math.random() * movableAgentIds.length)]
+        const target = randomTile()
+        office.dispatch({ type: 'moveAgentTo', id, col: target.col, row: target.row })
+        log(`Agent ${id} -> (${target.col}, ${target.row})`)
+      }
+
+      function renderAgentStates() {
+        const agents = office.officeState.getCharacters().sort((a, b) => a.id - b.id)
+        agentStatePanel.innerHTML = agents.map((agent) => {
+          const state = [
+            ['state', agent.state],
+            ['tile', `(${agent.tileCol}, ${agent.tileRow})`],
+            ['seatId', agent.seatId ?? 'none'],
+            ['active', String(agent.isActive)],
+            ['tool', agent.currentTool ?? 'none'],
+            ['bubble', agent.bubbleType ?? 'none'],
+            ['pathLeft', String(agent.path.length)],
+            ['seatTimer', agent.seatTimer.toFixed(1)],
+            ['wander', `${agent.wanderCount}/${agent.wanderLimit}`],
+            ['dir', String(agent.dir)],
+          ]
+
+          return `
+            <div class="agent-state">
+              <h3>Agent ${agent.id}${agent.label ? ` · ${agent.label}` : ''}</h3>
+              ${state.map(([k, v]) => `<div class="agent-state-row"><span>${k}</span><span>${v}</span></div>`).join('')}
+            </div>
+          `
+        }).join('')
+      }
+
+      function getCatalogEntry(type) {
+        return bundle.furniture.catalog.find((entry) => entry.id === type) || null
+      }
+
+      function getFurnitureAtTile(col, row) {
+        const layout = office.officeState.getLayout()
+        const hits = []
+        for (const item of layout.furniture) {
+          const entry = getCatalogEntry(item.type)
+          if (!entry) continue
+          for (let dr = 0; dr < entry.footprintH; dr++) {
+            for (let dc = 0; dc < entry.footprintW; dc++) {
+              if (item.col + dc === col && item.row + dr === row) {
+                hits.push({
+                  type: item.type,
+                  category: entry.category,
+                  origin: `(${item.col}, ${item.row})`,
+                })
+              }
+            }
+          }
+        }
+        return hits
+      }
+
+      function directionDelta(dir) {
+        if (dir === 0) return { dc: 0, dr: 1, label: 'DOWN' }
+        if (dir === 1) return { dc: -1, dr: 0, label: 'LEFT' }
+        if (dir === 2) return { dc: 1, dr: 0, label: 'RIGHT' }
+        return { dc: 0, dr: -1, label: 'UP' }
+      }
+
+      function renderDiagnosticPanel() {
+        const ch = office.officeState.characters.get(diagnosticAgentId)
+        if (!ch) {
+          diagnosticPanel.innerHTML = '<p>当前没有可诊断角色。</p>'
+          return
+        }
+
+        const seat = ch.seatId ? office.officeState.seats.get(ch.seatId) : null
+        const facing = directionDelta(ch.dir)
+        const seatFacing = seat ? directionDelta(seat.facingDir) : null
+
+        const forwardTiles = []
+        if (seat) {
+          for (let d = 1; d <= 3; d++) {
+            forwardTiles.push({
+              label: `front-${d}`,
+              col: seat.seatCol + seatFacing.dc * d,
+              row: seat.seatRow + seatFacing.dr * d,
+            })
+          }
+        }
+
+        const sideTiles = []
+        if (seat) {
+          for (let d = 1; d <= 2; d++) {
+            const baseCol = seat.seatCol + seatFacing.dc * d
+            const baseRow = seat.seatRow + seatFacing.dr * d
+            if (seatFacing.dc !== 0) {
+              sideTiles.push({ label: `side-${d}-up`, col: baseCol, row: baseRow - 1 })
+              sideTiles.push({ label: `side-${d}-down`, col: baseCol, row: baseRow + 1 })
+            } else {
+              sideTiles.push({ label: `side-${d}-left`, col: baseCol - 1, row: baseRow })
+              sideTiles.push({ label: `side-${d}-right`, col: baseCol + 1, row: baseRow })
+            }
+          }
+        }
+
+        const frontInfo = forwardTiles.map((tile) => {
+          const hits = getFurnitureAtTile(tile.col, tile.row)
+          return `<div class="agent-state-row"><span>${tile.label}</span><span>(${tile.col}, ${tile.row}) ${hits.length ? '→ ' + hits.map((hit) => `${hit.category}:${hit.type}`).join(', ') : '→ empty'}</span></div>`
+        }).join('')
+
+        const sideInfo = sideTiles.map((tile) => {
+          const hits = getFurnitureAtTile(tile.col, tile.row)
+          return `<div class="agent-state-row"><span>${tile.label}</span><span>(${tile.col}, ${tile.row}) ${hits.length ? '→ ' + hits.map((hit) => `${hit.category}:${hit.type}`).join(', ') : '→ empty'}</span></div>`
+        }).join('')
+
+        const seatHits = seat ? getFurnitureAtTile(seat.seatCol, seat.seatRow) : []
+        const sitsAtAssignedSeat = seat && ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow
+        const likelyWorkstation = [...forwardTiles, ...sideTiles].some((tile) =>
+          getFurnitureAtTile(tile.col, tile.row).some((hit) => hit.category === 'electronics'),
+        )
+
+        diagnosticPanel.innerHTML = `
+          <div class="agent-state">
+            <h3>Agent ${ch.id}${ch.label ? ` · ${ch.label}` : ''}</h3>
+            <div class="agent-state-row"><span>diagnostic</span><span>click agent in scene to switch</span></div>
+            <div class="agent-state-row"><span>state</span><span>${ch.state}</span></div>
+            <div class="agent-state-row"><span>currentTile</span><span>(${ch.tileCol}, ${ch.tileRow})</span></div>
+            <div class="agent-state-row"><span>seatId</span><span>${ch.seatId ?? 'none'}</span></div>
+            <div class="agent-state-row"><span>seatTile</span><span>${seat ? `(${seat.seatCol}, ${seat.seatRow})` : 'none'}</span></div>
+            <div class="agent-state-row"><span>seatFacing</span><span>${seatFacing ? seatFacing.label : 'none'}</span></div>
+            <div class="agent-state-row"><span>dir</span><span>${facing.label}</span></div>
+            <div class="agent-state-row"><span>onSeatNow</span><span>${String(!!sitsAtAssignedSeat)}</span></div>
+            <div class="agent-state-row"><span>seatTileHits</span><span>${seatHits.length ? seatHits.map((hit) => `${hit.category}:${hit.type}`).join(', ') : 'empty'}</span></div>
+            <div class="agent-state-row"><span>facesElectronics</span><span>${String(likelyWorkstation)}</span></div>
+            ${frontInfo}
+            ${sideInfo}
+          </div>
+        `
+      }
+
+      function startSimulation() {
+        stopSimulation()
+        timer = setInterval(() => {
+          randomMove()
+        }, 2200)
+      }
+
+      function stopSimulation() {
+        if (timer) clearInterval(timer)
+        timer = null
+      }
+
+      office.on('agentClick', ({ id }) => {
+        diagnosticAgentId = id
+        log(`点击了 Agent ${id}`)
+      })
+
+      setInterval(renderAgentStates, 200)
+      setInterval(renderDiagnosticPanel, 200)
+
+      document.getElementById('toggleMove').addEventListener('click', (event) => {
+        moving = !moving
+        event.currentTarget.textContent = moving ? '暂停模拟移动' : '恢复模拟移动'
+        if (moving) {
+          startSimulation()
+          log('恢复模拟移动')
+        } else {
+          stopSimulation()
+          log('暂停模拟移动')
+        }
+      })
+
+      document.getElementById('focusAgent1').addEventListener('click', () => {
+        office.dispatch({ type: 'focusAgent', id: 1 })
+        log('镜头跟随 Agent 1')
+      })
+
+      document.getElementById('zoomIn').addEventListener('click', () => {
+        office.zoom = Math.min(10, office.zoom + 1)
+        log(`放大到 ${office.zoom}x`)
+      })
+
+      document.getElementById('zoomOut').addEventListener('click', () => {
+        office.zoom = Math.max(1, office.zoom - 1)
+        log(`缩小到 ${office.zoom}x`)
+      })
+
+      document.getElementById('focusAgent2').addEventListener('click', () => {
+        office.dispatch({ type: 'focusAgent', id: 2 })
+        log('镜头跟随 Agent 2')
+      })
+
+      document.getElementById('clearFocus').addEventListener('click', () => {
+        office.dispatch({ type: 'focusAgent', id: null })
+        log('取消镜头跟随')
+      })
+
+      document.getElementById('moveNow').addEventListener('click', () => {
+        randomMove()
+      })
+
+      document.getElementById('stopAgent1').addEventListener('click', () => {
+        office.dispatch({ type: 'stopAgent', id: 1 })
+        log('Agent 1 原地停下')
+      })
+
+      document.getElementById('seatAgent1').addEventListener('click', () => {
+        office.dispatch({ type: 'seatAgentNow', id: 1 })
+        log('Agent 1 立刻坐到工位')
+      })
+
+      document.getElementById('sendAgent1ToSeat').addEventListener('click', () => {
+        office.dispatch({ type: 'sendAgentToSeat', id: 1 })
+        log('Agent 1 开始回工位')
+      })
+
+      document.getElementById('wanderAgent1').addEventListener('click', () => {
+        office.dispatch({ type: 'wanderAgent', id: 1 })
+        log('Agent 1 进入自由移动')
+      })
+
+      document.getElementById('modeWorking').addEventListener('click', () => {
+        office.dispatch({ type: 'setAgentMode', id: 1, mode: 'working', tool: 'Write' })
+        log('Agent 1 -> working')
+      })
+
+      document.getElementById('modeThinking').addEventListener('click', () => {
+        office.dispatch({ type: 'setAgentMode', id: 1, mode: 'thinking', tool: 'Read' })
+        log('Agent 1 -> thinking')
+      })
+
+      document.getElementById('modeWaiting').addEventListener('click', () => {
+        office.dispatch({ type: 'setAgentMode', id: 1, mode: 'waiting' })
+        log('Agent 1 -> waiting')
+      })
+
+      document.getElementById('modeBlocked').addEventListener('click', () => {
+        office.dispatch({ type: 'setAgentMode', id: 1, mode: 'blocked', tool: 'Task' })
+        log('Agent 1 -> blocked')
+      })
+
+      document.getElementById('modeIdle').addEventListener('click', () => {
+        office.dispatch({ type: 'setAgentMode', id: 1, mode: 'idle' })
+        log('Agent 1 -> idle')
+      })
+
+      document.getElementById('bubblePermission').addEventListener('click', () => {
+        office.dispatch({ type: 'showBubble', id: 1, bubbleType: 'permission' })
+        log('Agent 1 显示请求气泡')
+      })
+
+      document.getElementById('bubbleWaiting').addEventListener('click', () => {
+        office.dispatch({ type: 'showBubble', id: 2, bubbleType: 'waiting' })
+        log('Agent 2 显示完成气泡')
+      })
+
+      document.getElementById('clearBubbles').addEventListener('click', () => {
+        for (const id of [1, 2, 3, 4]) office.dispatch({ type: 'clearBubble', id })
+        log('清除所有气泡')
+      })
+
+      startSimulation()
+      renderAgentStates()
+      renderDiagnosticPanel()
+      log('预览已启动')
+    </script>
+  </body>
+</html>

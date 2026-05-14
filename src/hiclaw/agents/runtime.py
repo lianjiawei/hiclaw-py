@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import hiclaw.config as config
 from hiclaw.agents.router import run_agent
 from hiclaw.cluster.coordinator import (
     build_cluster_blueprint,
@@ -158,6 +159,35 @@ async def run_agent_for_conversation(
             mark_reviewer_finished(conversation, cluster_blueprint, "Workflow path completed successfully")
             finish_cluster_run(conversation, cluster_blueprint, True, wf_result.output_text[:180])
         mark_agent_run_finished(conversation)
+        return reply
+
+    if cluster_blueprint is not None and config.AGENT_CLUSTER_ORCHESTRATOR_ENABLED:
+        from hiclaw.cluster.orchestrator import (
+            render_cluster_orchestration_reply,
+            render_cluster_user_reply,
+            run_cluster_tasks_serial,
+            run_cluster_with_dynamic_planner,
+        )
+
+        if config.AGENT_CLUSTER_DYNAMIC_PLANNER_ENABLED:
+            orchestration = await run_cluster_with_dynamic_planner(
+                conversation,
+                cluster_blueprint,
+                sender,
+                user_prompt=record_text or prompt,
+            )
+        else:
+            orchestration = await run_cluster_tasks_serial(conversation, cluster_blueprint, sender)
+        if conversation.channel in {"feishu", "telegram"}:
+            reply_text = render_cluster_user_reply(orchestration)
+        else:
+            reply_text = render_cluster_orchestration_reply(orchestration)
+        reply = AgentReply.from_text(reply_text, provider="cluster")
+        outcome = _build_outcome(orchestration.success, False, reply.text, orchestration.error)
+        await _persist_run("cluster", outcome, orchestration.success)
+        _save_task_line("cluster_orchestration" if orchestration.success else "blocked_error")
+        finish_cluster_run(conversation, cluster_blueprint, orchestration.success, reply.text[:180] or orchestration.error)
+        mark_agent_run_finished(conversation, None if orchestration.success else orchestration.error)
         return reply
 
     try:

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pixel-office-core demo</title>
+    <style>
+      html, body, #app { margin: 0; width: 100%; height: 100%; background: #1e1e1e; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { PixelOfficeController, loadAssetBundleFromBaseUrl } from '../dist/index.js'
+
+      const office = new PixelOfficeController(document.getElementById('app'), { zoom: 3 })
+      const bundle = await loadAssetBundleFromBaseUrl('../public/assets')
+      office.loadAssets(bundle)
+      office.dispatch({
+        type: 'setAgents',
+        agents: [
+          { id: 1, label: 'Planner', palette: 0, isActive: true },
+          { id: 2, label: 'Runner', palette: 1, isActive: false }
+        ]
+      })
+      office.dispatch({ type: 'moveAgentTo', id: 2, col: 5, row: 5 })
+      office.on('agentClick', ({ id }) => console.log('clicked agent', id))
+    </script>
+  </body>
+  </html>

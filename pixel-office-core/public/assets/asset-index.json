@@ -1,0 +1,52 @@
+{
+  "characters": [
+    "characters/char_0.png",
+    "characters/char_1.png",
+    "characters/char_2.png",
+    "characters/char_3.png",
+    "characters/char_4.png",
+    "characters/char_5.png"
+  ],
+  "floors": [
+    "floors/floor_0.png",
+    "floors/floor_1.png",
+    "floors/floor_2.png",
+    "floors/floor_3.png",
+    "floors/floor_4.png",
+    "floors/floor_5.png",
+    "floors/floor_6.png",
+    "floors/floor_7.png",
+    "floors/floor_8.png"
+  ],
+  "walls": [
+    "walls/wall_0.png"
+  ],
+  "defaultLayout": "default-layout-1.json",
+  "furnitureDirs": [
+    "furniture/BIN",
+    "furniture/BOOKSHELF",
+    "furniture/CACTUS",
+    "furniture/CLOCK",
+    "furniture/COFFEE",
+    "furniture/COFFEE_TABLE",
+    "furniture/CUSHIONED_BENCH",
+    "furniture/CUSHIONED_CHAIR",
+    "furniture/DESK",
+    "furniture/DOUBLE_BOOKSHELF",
+    "furniture/HANGING_PLANT",
+    "furniture/LARGE_PAINTING",
+    "furniture/LARGE_PLANT",
+    "furniture/PC",
+    "furniture/PLANT",
+    "furniture/PLANT_2",
+    "furniture/POT",
+    "furniture/SMALL_PAINTING",
+    "furniture/SMALL_PAINTING_2",
+    "furniture/SMALL_TABLE",
+    "furniture/SOFA",
+    "furniture/TABLE_FRONT",
+    "furniture/WHITEBOARD",
+    "furniture/WOODEN_BENCH",
+    "furniture/WOODEN_CHAIR"
+  ]
+}

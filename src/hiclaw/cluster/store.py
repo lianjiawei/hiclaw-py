@@ -9,9 +9,10 @@ from uuid import uuid4
 from hiclaw.config import AGENT_CLUSTER_MAX_EVENTS, CLUSTER_RUNTIME_FILE
 from hiclaw.core.types import ConversationRef
 
-from .models import ClusterAgent, ClusterBlueprint
+from .models import ClusterAgent, ClusterBlueprint, ClusterTask
 
 _STORE_LOCK = Lock()
+COMPLETED_RUN_DASHBOARD_TTL_SECONDS = 30
 
 DEFAULT_CLUSTER_RUNTIME_STATE: dict[str, Any] = {
     "runs": {},
@@ -21,6 +22,15 @@ DEFAULT_CLUSTER_RUNTIME_STATE: dict[str, Any] = {
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _compact(text: str | None, limit: int = 220) -> str:
@@ -75,6 +85,7 @@ def _build_agent_entries(agents: tuple[ClusterAgent, ...]) -> dict[str, Any]:
             "agent_id": agent.agent_id,
             "name": agent.name,
             "role": agent.role,
+            "spec_name": agent.spec_name or agent.agent_id,
             "status": "queued",
             "summary": _compact(agent.objective, 180),
             "updated_at": now,
@@ -83,25 +94,53 @@ def _build_agent_entries(agents: tuple[ClusterAgent, ...]) -> dict[str, Any]:
     }
 
 
-def _build_task_entries(blueprint: ClusterBlueprint) -> list[dict[str, Any]]:
-    tasks: list[dict[str, Any]] = []
+def _agent_id_for_role(blueprint: ClusterBlueprint, role: str, fallback: str) -> str:
+    for agent in blueprint.agents:
+        if agent.role == role:
+            return agent.agent_id
+    return fallback
+
+
+def build_cluster_tasks_from_blueprint(blueprint: ClusterBlueprint) -> tuple[ClusterTask, ...]:
+    tasks: list[ClusterTask] = []
+    planner_id = _agent_id_for_role(blueprint, "planner", "planner")
+    executor_id = _agent_id_for_role(blueprint, "executor", "executor")
+    reviewer_id = _agent_id_for_role(blueprint, "reviewer", "reviewer")
+    has_reviewer = any(agent.role == "reviewer" for agent in blueprint.agents)
     for index, step in enumerate(blueprint.planned_steps, start=1):
-        assigned_agent = "planner" if index == 1 else "executor"
-        if index == len(blueprint.planned_steps) and any(agent.role == "reviewer" for agent in blueprint.agents):
-            assigned_agent = "reviewer"
+        assigned_agent = planner_id if index == 1 else executor_id
+        if index == len(blueprint.planned_steps) and has_reviewer:
+            assigned_agent = reviewer_id
         tasks.append(
-            {
-                "task_id": f"{blueprint.cluster_id}:task:{index}",
-                "cluster_id": blueprint.cluster_id,
-                "title": step,
-                "assigned_agent": assigned_agent,
-                "state": "queued",
-                "depends_on": [tasks[-1]["task_id"]] if tasks else [],
-                "input_payload": "",
-                "output_payload": "",
-            }
+            ClusterTask(
+                task_id=f"{blueprint.cluster_id}:task:{index}",
+                cluster_id=blueprint.cluster_id,
+                title=step,
+                assigned_agent=assigned_agent,
+                depends_on=(tasks[-1].task_id,) if tasks else (),
+            )
         )
-    return tasks
+    return tuple(tasks)
+
+
+def _build_task_entries(blueprint: ClusterBlueprint) -> list[dict[str, Any]]:
+    return _task_entries_from_tasks(build_cluster_tasks_from_blueprint(blueprint))
+
+
+def _task_entries_from_tasks(tasks: tuple[ClusterTask, ...]) -> list[dict[str, Any]]:
+    return [
+        {
+            "task_id": task.task_id,
+            "cluster_id": task.cluster_id,
+            "title": task.title,
+            "assigned_agent": task.assigned_agent,
+            "state": task.state,
+            "depends_on": list(task.depends_on),
+            "input_payload": task.input_payload,
+            "output_payload": task.output_payload,
+        }
+        for task in tasks
+    ]
 
 
 def _append_message(run: dict[str, Any], *, from_agent: str, to_agent: str, kind: str, content: str) -> None:
@@ -217,6 +256,21 @@ def record_cluster_event(cluster_id: str, *, kind: str, agent_id: str, summary: 
     _update_state(mutator)
 
 
+def replace_cluster_tasks(cluster_id: str, tasks: tuple[ClusterTask, ...]) -> None:
+    def mutator(state: dict[str, Any]) -> None:
+        runs = dict(state.get("runs") or {})
+        run = dict(runs.get(cluster_id) or {})
+        if not run:
+            return
+        run["tasks"] = _task_entries_from_tasks(tasks)
+        run["planned_steps"] = [task.title for task in tasks]
+        run["updated_at"] = _now_iso()
+        runs[cluster_id] = run
+        state["runs"] = runs
+
+    _update_state(mutator)
+
+
 def mark_cluster_agent_started(cluster_id: str, agent_id: str, summary: str) -> None:
     def mutator(state: dict[str, Any]) -> None:
         runs = dict(state.get("runs") or {})
@@ -269,6 +323,60 @@ def mark_cluster_agent_finished(cluster_id: str, agent_id: str, summary: str, *,
     _update_state(mutator)
 
 
+def _set_task_state_by_id(run: dict[str, Any], task_id: str, state: str, output_payload: str = "") -> None:
+    tasks = list(run.get("tasks") or [])
+    for task in tasks:
+        if task.get("task_id") != task_id:
+            continue
+        task["state"] = state
+        if output_payload:
+            task["output_payload"] = _compact(output_payload, 220)
+        break
+    run["tasks"] = tasks
+
+
+def mark_cluster_task_started(cluster_id: str, task_id: str, agent_id: str, summary: str) -> None:
+    def mutator(state: dict[str, Any]) -> None:
+        runs = dict(state.get("runs") or {})
+        run = dict(runs.get(cluster_id) or {})
+        if not run:
+            return
+        run["state"] = "working"
+        _set_agent_status(run, agent_id, status="working", summary=summary)
+        _set_task_state_by_id(run, task_id, "in_progress")
+        _append_event(run, kind="task_started", agent_id=agent_id, summary=summary, detail=task_id)
+        run["updated_at"] = _now_iso()
+        runs[cluster_id] = run
+        state["runs"] = runs
+
+    _update_state(mutator)
+
+
+def mark_cluster_task_finished(cluster_id: str, task_id: str, agent_id: str, output: str, *, success: bool = True) -> None:
+    def mutator(state: dict[str, Any]) -> None:
+        runs = dict(state.get("runs") or {})
+        run = dict(runs.get(cluster_id) or {})
+        if not run:
+            return
+        task_state = "done" if success else "error"
+        agent_state = "done" if success else "error"
+        event_kind = "task_finished" if success else "task_failed"
+        message_kind = "result" if success else "error"
+        _set_agent_status(run, agent_id, status=agent_state, summary=output)
+        _set_task_state_by_id(run, task_id, task_state, output)
+        _append_event(run, kind=event_kind, agent_id=agent_id, summary=output or task_state, detail=task_id)
+        _append_message(run, from_agent=agent_id, to_agent="cluster", kind=message_kind, content=output)
+        if not success:
+            run["state"] = "error"
+        else:
+            run["state"] = "working"
+        run["updated_at"] = _now_iso()
+        runs[cluster_id] = run
+        state["runs"] = runs
+
+    _update_state(mutator)
+
+
 def finish_cluster_run(cluster_id: str, success: bool, summary: str) -> None:
     def mutator(state: dict[str, Any]) -> None:
         runs = dict(state.get("runs") or {})
@@ -300,7 +408,21 @@ def _select_dashboard_run(state: dict[str, Any]) -> dict[str, Any] | None:
     active = [run for run in ordered_runs if str(run.get("state") or "") in {"queued", "working", "waiting"}]
     if active:
         return active[-1]
-    return ordered_runs[-1] if ordered_runs else None
+    if not ordered_runs:
+        return None
+
+    latest = ordered_runs[-1]
+    latest_state = str(latest.get("state") or "")
+    if latest_state not in {"done", "error"}:
+        return latest
+
+    finished_at = _parse_iso_datetime(str(latest.get("last_event_at") or latest.get("updated_at") or ""))
+    if finished_at is None:
+        return None
+    age_seconds = max((datetime.now() - finished_at).total_seconds(), 0)
+    if age_seconds <= COMPLETED_RUN_DASHBOARD_TTL_SECONDS:
+        return latest
+    return None
 
 
 def build_cluster_projection() -> dict[str, Any]:

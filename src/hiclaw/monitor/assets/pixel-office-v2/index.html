@@ -3,88 +3,75 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hiclaw Pixel Office V2</title>
+  <title>HiClaw 多智能体办公室</title>
   <base href="/v2/">
-  <link rel="stylesheet" href="./styles.css?v=cluster-v2-2">
+  <link rel="stylesheet" href="./styles.css?v=cluster-v2-17">
 </head>
 <body>
   <div class="v2-shell">
-    <aside class="v2-sidebar">
-      <section class="v2-card v2-summary-card">
+    <section class="v2-overview" style="display:flex;gap:12px;align-items:stretch;">
+      <section class="v2-card v2-summary-card" style="flex:0 0 330px;display:flex;flex-direction:column;min-width:0;">
         <div class="v2-card-head">
-          <p class="v2-label">Agent Status</p>
-          <span class="v2-status-mini"><i class="v2-status-mini-dot" id="v2StateDot"></i><span id="v2StatePill">IDLE</span></span>
+          <p class="v2-label">运行状态</p>
+          <div class="v2-head-badges">
+            <span class="v2-status-mini"><i class="v2-status-mini-dot" id="v2StateDot"></i><span id="v2StatePill">空闲</span></span>
+            <span class="v2-run-badge"><span id="v2ActiveRunsBadge">0</span> 运行中</span>
+          </div>
         </div>
-        <p class="v2-summary-value" id="v2StateValue">Idle</p>
-        <p class="v2-summary-copy" id="v2StateCopy">当前空闲，办公室处于轻量巡航状态。</p>
+        <p class="v2-summary-value" id="v2StateValue">空闲</p>
+        <p class="v2-summary-copy" id="v2StateCopy">当前工作区处于空闲状态。</p>
+        <div class="v2-run-list v2-runs-inline" id="v2RunList"></div>
       </section>
 
-      <section class="v2-card v2-highlight-card">
-        <p class="v2-label">Current Task</p>
-        <p class="v2-text" id="v2Task">暂无任务</p>
-      </section>
-
-      <section class="v2-card v2-highlight-card subtle">
-        <p class="v2-label">Current Tool</p>
-        <p class="v2-text" id="v2Tool">无</p>
-      </section>
-
-      <section class="v2-card v2-meta-card">
-        <p class="v2-label">Current Channel</p>
-        <p class="v2-text" id="v2Channel">-</p>
-      </section>
-
-      <section class="v2-card v2-meta-card compact">
-        <p class="v2-label">Last Active</p>
-        <p class="v2-meta-value" id="v2LastActive">-</p>
-      </section>
-
-      <section class="v2-card">
-        <div class="v2-card-head">
-          <p class="v2-label">Active Runs</p>
-          <span class="v2-run-badge" id="v2ActiveRunsBadge">0</span>
+      <section class="v2-card v2-signal-card" style="flex:1 1 0;display:flex;flex-direction:column;min-width:0;">
+        <div class="v2-signal-main">
+          <p class="v2-label">当前任务</p>
+          <p class="v2-text v2-task-text" id="v2Task">当前没有任务</p>
         </div>
-        <div class="v2-run-list" id="v2RunList"></div>
-      </section>
-
-      <section class="v2-card">
-        <div class="v2-card-head">
-          <p class="v2-label">Cluster Agents</p>
-          <span class="v2-run-badge" id="v2ClusterAgentsBadge">0</span>
-        </div>
-        <div class="v2-run-list" id="v2AgentList"></div>
-      </section>
-
-      <section class="v2-card">
-        <div class="v2-card-head">
-          <p class="v2-label">Cluster Timeline</p>
-          <span class="v2-run-badge" id="v2ClusterStateBadge">IDLE</span>
-        </div>
-        <div class="v2-run-list" id="v2EventList"></div>
-      </section>
-    </aside>
-
-    <main class="v2-main">
-      <section class="v2-office-stage">
-        <div class="v2-stage-head">
+        <div class="v2-signal-grid">
           <div>
-            <h2>管网燃气军团数字员工办公区</h2>
+            <p class="v2-label">工具</p>
+            <p class="v2-meta-value" id="v2Tool">无</p>
           </div>
-          <div class="v2-legend">
-            <span><i class="legend-dot idle"></i>Idle</span>
-            <span><i class="legend-dot work"></i>Working</span>
-            <span><i class="legend-dot wait"></i>Waiting</span>
+          <div>
+            <p class="v2-label">通道</p>
+            <p class="v2-meta-value" id="v2Channel">-</p>
           </div>
-        </div>
-        <div class="v2-stage-frame">
-        <canvas id="officeCanvasV2" width="1280" height="760" aria-label="Pixel office v2 canvas"></canvas>
+          <div class="v2-signal-wide">
+            <p class="v2-label">最近活跃</p>
+            <p class="v2-meta-value" id="v2LastActive">-</p>
+          </div>
         </div>
       </section>
-    </main>
+
+      <section class="v2-card" style="flex:1.35 1 0;display:flex;flex-direction:column;min-width:0;">
+        <div class="v2-card-head">
+          <p class="v2-label">协作时间线</p>
+          <span class="v2-run-badge" id="v2ClusterStateBadge">空闲</span>
+        </div>
+        <div class="v2-run-list v2-timeline-list" id="v2EventList"></div>
+      </section>
+    </section>
+
+    <section class="v2-office-stage">
+      <div class="v2-stage-head">
+        <div>
+          <h2>HiClaw 多智能体办公室</h2>
+        </div>
+        <div class="v2-legend">
+          <span><i class="legend-dot idle"></i>空闲</span>
+          <span><i class="legend-dot work"></i>工作中</span>
+          <span><i class="legend-dot wait"></i>等待中</span>
+        </div>
+      </div>
+      <div class="v2-stage-frame">
+        <canvas id="officeCanvasV2" width="1280" height="680" aria-label="Pixel office v2 canvas"></canvas>
+      </div>
+    </section>
   </div>
 
-  <script src="./dashboard-ui.js?v=cluster-v2-2"></script>
-  <script src="./office-engine.js?v=cluster-v2-2"></script>
-  <script src="./app.js?v=cluster-v2-2"></script>
+  <script src="./dashboard-ui.js?v=cluster-v2-17"></script>
+  <script src="./office-engine.js?v=cluster-v2-17"></script>
+  <script src="./app.js?v=cluster-v2-17"></script>
 </body>
 </html>

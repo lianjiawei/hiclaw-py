@@ -9,6 +9,9 @@ ClusterTaskState = Literal["queued", "in_progress", "waiting", "done", "error"]
 ClusterEventKind = Literal[
     "cluster_started",
     "task_dispatched",
+    "task_started",
+    "task_finished",
+    "task_failed",
     "agent_started",
     "agent_note",
     "agent_finished",
@@ -22,6 +25,7 @@ class ClusterAgent:
     role: ClusterAgentRole
     name: str
     objective: str
+    spec_name: str = ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,27 +1,52 @@
 (function () {
   const canvas = document.getElementById("officeCanvasV2");
-  const ctx = canvas.getContext("2d");
+  const displayCtx = canvas.getContext("2d");
+  displayCtx.imageSmoothingEnabled = false;
+  const sceneCanvas = document.createElement("canvas");
+  sceneCanvas.width = 1280;
+  sceneCanvas.height = 760;
+  const ctx = sceneCanvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
+  const VIEWPORT_HEIGHT = canvas.height;
+  const SCENE_SHIFT_Y = -44;
 
   const scene = {
-    width: canvas.width,
-    height: canvas.height,
+    width: sceneCanvas.width,
+    height: sceneCanvas.height,
     floorTop: 220,
     walkMinX: 120,
     walkMaxX: 1120,
     corridorY: 426,
     occupancy: [null, null, null, null],
     seats: [
-      { x: 760, y: 360 },
-      { x: 470, y: 360 },
-      { x: 630, y: 528 },
-      { x: 930, y: 520 },
+      { x: 810, y: 360 },
+      { x: 290, y: 386 },
+      { x: 1018, y: 520 },
+      { x: 610, y: 538 },
     ],
   };
   const clusterZones = {
-    planner: { seatIndex: 1, idle: { x: 446, y: 446 }, waiting: { x: 396, y: 520 } },
-    executor: { seatIndex: 0, idle: { x: 748, y: 446 }, waiting: { x: 714, y: 522 } },
-    reviewer: { seatIndex: 2, idle: { x: 630, y: 572 }, waiting: { x: 576, y: 548 } },
+    planner: {
+      seatIndex: 1,
+      idle: { x: 270, y: 526 },
+      waiting: { x: 222, y: 584 },
+      idleSpots: [{ x: 238, y: 520 }, { x: 312, y: 548 }, { x: 272, y: 590 }],
+      minX: 180, maxX: 430, minY: 470, maxY: 604, bubbleX: -2, bubbleY: -70,
+    },
+    executor: {
+      seatIndex: 0,
+      idle: { x: 730, y: 510 },
+      waiting: { x: 690, y: 584 },
+      idleSpots: [{ x: 664, y: 520 }, { x: 742, y: 488 }, { x: 806, y: 560 }],
+      minX: 610, maxX: 870, minY: 454, maxY: 604, bubbleX: -44, bubbleY: -70,
+    },
+    reviewer: {
+      seatIndex: 2,
+      idle: { x: 1020, y: 574 },
+      waiting: { x: 958, y: 604 },
+      idleSpots: [{ x: 944, y: 566 }, { x: 1004, y: 604 }, { x: 1060, y: 540 }],
+      minX: 900, maxX: 1090, minY: 482, maxY: 618, bubbleX: -80, bubbleY: -70,
+    },
   };
 
   const agents = new Map();
@@ -70,6 +95,7 @@
       bubbleCooldown: 0,
       eventKind: "",
       eventSummary: "",
+      marqueePhase: 0,
     };
     agents.set(id, agent);
     return agent;
@@ -110,6 +136,50 @@
     agent.routeIndex = 0;
   }
 
+  function assignDirectTarget(agent, x, y) {
+    agent.route = [{ x, y }];
+    agent.routeIndex = 0;
+  }
+
+  function assignIdleRoam(agent, bounds = movementBounds(agent)) {
+    const spots = Array.isArray(bounds.idleSpots) ? bounds.idleSpots : [];
+    const anchor = spots.length ? spots[Math.floor(Math.random() * spots.length)] : {
+      x: bounds.minX + Math.round(Math.random() * (bounds.maxX - bounds.minX)),
+      y: bounds.minY + Math.round(Math.random() * (bounds.maxY - bounds.minY)),
+    };
+    const jitterX = Math.round((Math.random() - 0.5) * 26);
+    const jitterY = Math.round((Math.random() - 0.5) * 18);
+    assignDirectTarget(
+      agent,
+      clamp(anchor.x + jitterX, bounds.minX, bounds.maxX),
+      clamp(anchor.y + jitterY, bounds.minY, bounds.maxY),
+    );
+    agent.wanderCooldown = 900 + Math.random() * 900;
+  }
+
+  function idleSpeedForAgent(agent) {
+    if (agent.role === "planner") return 0.046;
+    if (agent.role === "reviewer") return 0.052;
+    if (agent.role === "executor") return 0.06;
+    return 0.05;
+  }
+
+  function settleAt(agent, x, y) {
+    agent.x = x;
+    agent.y = y;
+    agent.targetX = x;
+    agent.targetY = y;
+    agent.route = [];
+    agent.routeIndex = 0;
+  }
+
+  function movementBounds(agent) {
+    if (agent.role && clusterZones[agent.role]) {
+      return clusterZones[agent.role];
+    }
+    return { minX: scene.walkMinX, maxX: scene.walkMaxX, minY: 300, maxY: 620, bubbleX: -16, bubbleY: -62 };
+  }
+
   function mapClusterStatus(status) {
     const value = String(status || "idle").toLowerCase();
     if (value === "working") return "working";
@@ -147,12 +217,32 @@
   function bubbleForEvent(event, role) {
     if (!event) return "";
     const kind = String(event.kind || "").toLowerCase();
-    if (kind === "task_dispatched") return role === "planner" ? "PLAN" : "TASK";
-    if (kind === "agent_started") return role === "executor" ? "GO" : "SYNC";
-    if (kind === "agent_finished") return role === "reviewer" ? "CHECK" : "DONE";
-    if (kind === "agent_note") return "NOTE";
-    if (kind === "cluster_finished") return "OK";
-    return "MSG";
+    if (kind === "task_dispatched") return role === "planner" ? "规划就绪" : "任务就绪";
+    if (kind === "task_started") return role === "planner" ? "规划中" : role === "reviewer" ? "复核中" : "执行中";
+    if (kind === "agent_started") return role === "planner" ? "同步中" : role === "reviewer" ? "检查中" : "已开始";
+    if (kind === "task_finished") return role === "reviewer" ? "复核完成" : "任务完成";
+    if (kind === "agent_finished") return role === "reviewer" ? "检查完成" : "已完成";
+    if (kind === "agent_note") return "等待中";
+    if (kind === "cluster_finished") return "全部完成";
+    return role === "planner" ? "规划中" : role === "reviewer" ? "复核中" : "工作中";
+  }
+
+  function statusLabelForAgent(agent) {
+    if (agent.state === "waiting") return "等待中";
+    if (agent.role === "planner") return agent.action === "researching" ? "分析中" : "规划中";
+    if (agent.role === "reviewer") return agent.action === "reading" ? "核对中" : "复核中";
+    if (agent.action === "reading") return "阅读中";
+    if (agent.action === "writing") return "编写中";
+    if (agent.action === "running") return "运行中";
+    if (agent.action === "researching") return "分析中";
+    return "工作中";
+  }
+
+  function displayRoleName(agent) {
+    if (agent.role === "planner") return "规划员";
+    if (agent.role === "executor") return "执行员";
+    if (agent.role === "reviewer") return "复核员";
+    return agent.helper ? `助手 ${agent.label}` : agent.label;
   }
 
   function summarizeEvent(event) {
@@ -178,6 +268,7 @@
         const workerId = item.agent_id || `cluster-${index}`;
         const worker = ensureAgent(workerId, index);
         const role = String(item.role || "agent").toLowerCase();
+        const previousState = worker.state;
         const zone = clusterZones[role] || { seatIndex: index % scene.seats.length, idle: { x: 620, y: 540 }, waiting: { x: 620, y: 520 } };
         const roleEvent = [...events].reverse().find((event) => String(event.agent_id || "") === workerId);
         worker.state = mapClusterStatus(item.status);
@@ -195,6 +286,7 @@
         worker.bubbleCooldown = worker.bubbleText ? 2600 : Math.max(0, worker.bubbleCooldown || 0);
         worker.eventKind = String((roleEvent || {}).kind || "");
         worker.eventSummary = summarizeEvent(roleEvent);
+        worker.previousState = previousState;
         worker.x = Number.isFinite(worker.x) ? worker.x : zone.idle.x;
         worker.y = Number.isFinite(worker.y) ? worker.y : zone.idle.y;
         scene.occupancy[worker.seatIndex] = worker.seatIndex;
@@ -210,13 +302,19 @@
       for (const worker of agents.values()) {
         if (worker.state === "working") {
           const seat = scene.seats[worker.seatIndex] || scene.seats[0];
-          assignRoute(worker, seat.x, seat.y);
+          settleAt(worker, seat.x, seat.y);
         } else if (worker.state === "waiting") {
           const zone = clusterZones[worker.role] || clusterZones.executor;
-          assignRoute(worker, zone.waiting.x, zone.waiting.y);
+          if (worker.previousState !== "waiting" || !worker.route.length) {
+            assignRoute(worker, zone.waiting.x, zone.waiting.y);
+          }
         } else if (worker.state === "idle") {
           const zone = clusterZones[worker.role] || clusterZones.executor;
-          assignRoute(worker, zone.idle.x, zone.idle.y);
+          if (worker.previousState === "working" || worker.previousState === "waiting") {
+            assignIdleRoam(worker, zone);
+          } else if (!worker.route.length && worker.wanderCooldown <= 0) {
+            assignIdleRoam(worker, zone);
+          }
         }
       }
       return;
@@ -263,7 +361,7 @@
     for (const worker of agents.values()) {
       if (worker.state === "working") {
         const seat = scene.seats[worker.seatIndex] || scene.seats[0];
-        assignRoute(worker, seat.x, seat.y);
+        settleAt(worker, seat.x, seat.y);
       }
     }
 
@@ -278,7 +376,7 @@
         helper.helper = true;
         helper.task = run.prompt || "";
         helper.screenTint = "#ffd166";
-        assignRoute(helper, 300 + index * 90, 566 - (index % 2) * 16);
+        settleAt(helper, 300 + index * 90, 566 - (index % 2) * 16);
         activeIds.add(helper.id);
       });
     }
@@ -287,17 +385,14 @@
   function updateAgent(agent, dt) {
     if (agent.state === "offline") return;
 
-    agent.bob += dt * 0.004;
+    if (agent.state !== "working") {
+      agent.bob += dt * 0.002;
+    }
     agent.pulse += dt * 0.01;
     agent.wanderCooldown -= dt;
 
     if (agent.state === "idle" && agent.wanderCooldown <= 0) {
-      assignRoute(
-        agent,
-        510 + Math.round((Math.random() - 0.5) * 220),
-        540 + Math.round((Math.random() - 0.5) * 20),
-      );
-      agent.wanderCooldown = 2200 + Math.random() * 1800;
+      assignIdleRoam(agent);
     }
 
     if (Array.isArray(agent.route) && agent.route.length) {
@@ -306,20 +401,25 @@
       agent.targetY = waypoint.y;
     }
 
-    const speed = agent.state === "working" ? 0.12 : agent.state === "waiting" ? 0.07 : 0.08;
+    const speed = agent.state === "waiting" ? 0.045 : agent.state === "idle" ? idleSpeedForAgent(agent) : 0;
     const dx = agent.targetX - agent.x;
     const dy = agent.targetY - agent.y;
     const distance = Math.hypot(dx, dy);
-    if (distance > 1.2) {
+    if (distance > 1.2 && speed > 0) {
       agent.x += (dx / distance) * speed * dt;
       agent.y += (dy / distance) * speed * dt;
       agent.direction = dx >= 0 ? 1 : -1;
     } else if (agent.route.length) {
-      agent.routeIndex = Math.min(agent.routeIndex + 1, agent.route.length - 1);
+      if (agent.routeIndex >= agent.route.length - 1) {
+        agent.route = [];
+        agent.routeIndex = 0;
+      } else {
+        agent.routeIndex += 1;
+      }
     }
 
     for (const other of agents.values()) {
-      if (other === agent || other.state === "offline") continue;
+      if (other === agent || other.state === "offline" || agent.state === "working") continue;
       const pushDx = agent.x - other.x;
       const pushDy = agent.y - other.y;
       const pushDistance = Math.hypot(pushDx, pushDy);
@@ -330,9 +430,11 @@
       }
     }
 
-    agent.x = clamp(agent.x, scene.walkMinX, scene.walkMaxX);
-    agent.y = clamp(agent.y, 300, 620);
+    const bounds = movementBounds(agent);
+    agent.x = clamp(agent.x, bounds.minX, bounds.maxX);
+    agent.y = clamp(agent.y, bounds.minY, bounds.maxY);
     agent.bubbleCooldown = Math.max(0, (agent.bubbleCooldown || 0) - dt);
+    agent.marqueePhase = ((agent.marqueePhase || 0) + dt * 0.07) % 100000;
   }
 
   function drawWallDecor() {
@@ -588,20 +690,78 @@
     }
   }
 
-  function drawSpeechBubble(agent, text) {
-    fill(agent.x - 16, agent.y - 62, 84, 28, "#ffffff");
-    fill(agent.x - 10, agent.y - 56, 72, 16, "#f6f8ff");
-    fill(agent.x + 12, agent.y - 34, 12, 8, "#ffffff");
-    ctx.fillStyle = "#1f2b45";
-    ctx.font = "12px monospace";
-    ctx.fillText(text, agent.x - 2, agent.y - 44);
+  function drawIdleProp(agent, x, y) {
+    if (agent.state !== "idle") return;
+    const sway = Math.round(Math.sin(agent.pulse * 0.6) * 2);
+    if (agent.role === "planner") {
+      fill(x + 30, y + 30, 8, 10, "#e8efff");
+      fill(x + 31, y + 32, 6, 2, "#8ea3ff");
+      fill(x + 31, y + 35, 6, 2, "#8ea3ff");
+      return;
+    }
+    if (agent.role === "executor") {
+      fill(x + 29, y + 30 + sway, 10, 9, "#f2f7ff");
+      fill(x + 31, y + 28 + sway, 6, 3, "#63e6be");
+      return;
+    }
+    if (agent.role === "reviewer") {
+      fill(x + 29, y + 29, 12, 9, "#fff2f7");
+      fill(x + 31, y + 31, 8, 5, "#ffcadc");
+      fill(x + 38, y + 33, 2, 6, "#f3c8a5");
+    }
   }
 
-  function drawEventCaption(agent) {
-    if (!agent.eventSummary) return;
-    ctx.fillStyle = "rgba(237,242,255,0.92)";
-    ctx.font = "10px monospace";
-    ctx.fillText(String(agent.eventSummary).slice(0, 18), Math.round(agent.x) - 6, Math.round(agent.y) - 74);
+  function drawSpeechBubble(agent, text, headline = "") {
+    const bounds = movementBounds(agent);
+    const bubbleX = agent.x + (bounds.bubbleX ?? -16);
+    const bubbleY = agent.y + (bounds.bubbleY ?? -62);
+    const hasHeadline = Boolean(String(headline || "").trim());
+    const bubbleW = hasHeadline ? 170 : 84;
+    const bubbleH = hasHeadline ? 46 : 28;
+    const innerX = bubbleX + 6;
+    const innerY = bubbleY + 6;
+    const innerW = bubbleW - 12;
+    const innerH = bubbleH - 12;
+
+    fill(bubbleX, bubbleY, bubbleW, bubbleH, "#ffffff");
+    fill(innerX, innerY, innerW, innerH, "#f6f8ff");
+    fill(agent.x + 12, bubbleY + bubbleH, 12, 8, "#ffffff");
+
+    if (hasHeadline) {
+      const headlineText = String(headline).replace(/\s+/g, " ").trim();
+      fill(innerX + 3, innerY + 2, innerW - 6, 13, "#ffffff");
+      fill(innerX + 3, innerY + 18, innerW - 6, 16, "#e7ebf5");
+      const clipX = innerX + 4;
+      const clipY = innerY + 3;
+      const clipW = innerW - 8;
+      const clipH = 12;
+      const gap = 26;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clipX, clipY, clipW, clipH);
+      ctx.clip();
+      ctx.fillStyle = "#616e92";
+      ctx.font = "10px monospace";
+      const textW = ctx.measureText(headlineText).width;
+      if (textW > clipW - 2) {
+        const travel = textW + gap;
+        const shift = (agent.marqueePhase || 0) % travel;
+        const baseX = clipX + clipW - shift;
+        ctx.fillText(headlineText, baseX, clipY + 10);
+        ctx.fillText(headlineText, baseX + travel, clipY + 10);
+      } else {
+        ctx.fillText(headlineText, clipX + 2, clipY + 10);
+      }
+      ctx.restore();
+      ctx.fillStyle = "#1f2b45";
+      ctx.font = "12px monospace";
+      ctx.fillText(text, innerX + 10, innerY + 31);
+      return;
+    }
+
+    ctx.fillStyle = "#1f2b45";
+    ctx.font = "12px monospace";
+    ctx.fillText(text, bubbleX + 14, bubbleY + 18);
   }
 
   function drawWaitingBeacon(agent) {
@@ -647,7 +807,7 @@
     if (agent.state === "offline") return;
     const x = Math.round(agent.x);
     const seated = agent.state === "working";
-    const y = Math.round(agent.y + Math.sin(agent.bob) * (seated ? 1 : 2));
+    const y = Math.round(agent.y + Math.sin(agent.bob) * (seated ? 0 : 1));
     fill(x + 8, y + (seated ? 40 : 48), 34, 8, "rgba(0,0,0,0.22)");
     drawRoleHalo(agent, x, y);
     drawAgentGlow(agent);
@@ -680,32 +840,37 @@
     fill(x + 18, y + 20, 8, 2, "rgba(0,0,0,0.14)");
     drawRoleAccent(agent, x, y, seated);
     drawActionProp(agent, x, y);
+    drawIdleProp(agent, x, y);
     drawScreenAura(agent, x, y);
     drawHelperBadge(agent, x, y);
 
     drawWorkingFx(agent);
 
     if (agent.bubbleText && agent.bubbleCooldown > 0) {
-      drawSpeechBubble(agent, agent.bubbleText);
-      drawEventCaption(agent);
+      drawSpeechBubble(agent, agent.bubbleText, agent.eventSummary || "");
     } else if (agent.state === "working") {
-      const label = agent.action === "reading" ? "READ" : agent.action === "writing" ? "WRITE" : agent.action === "running" ? "RUN" : agent.action === "researching" ? "SEARCH" : "WORK";
-      drawSpeechBubble(agent, label);
+      drawSpeechBubble(agent, statusLabelForAgent(agent), agent.task || agent.eventSummary || "");
     } else if (agent.state === "waiting") {
-      drawSpeechBubble(agent, "?");
+      drawSpeechBubble(agent, statusLabelForAgent(agent), agent.task || agent.eventSummary || "");
       drawWaitingBeacon(agent);
     }
 
     ctx.fillStyle = "#edf2ff";
     ctx.font = "12px sans-serif";
-    const labelText = agent.role && agent.role !== "primary" ? agent.role.toUpperCase() : (agent.helper ? `assist ${agent.label}` : agent.label);
+    const labelText = agent.role && agent.role !== "primary" ? displayRoleName(agent) : (agent.helper ? `助手 ${agent.label}` : agent.label);
     ctx.fillText(labelText.slice(0, 14), x - 2, y + (seated ? 66 : 76));
   }
 
   function render() {
+    ctx.clearRect(0, 0, scene.width, scene.height);
+    ctx.save();
+    ctx.translate(0, SCENE_SHIFT_Y);
     drawBackground();
     const visibleAgents = Array.from(agents.values()).filter((agent) => agent.state !== "offline").sort((a, b) => a.y - b.y);
     visibleAgents.forEach((agent) => drawAgent(agent));
+    ctx.restore();
+    displayCtx.clearRect(0, 0, canvas.width, canvas.height);
+    displayCtx.drawImage(sceneCanvas, 0, 0, scene.width, VIEWPORT_HEIGHT, 0, 0, canvas.width, canvas.height);
   }
 
   function tickOfficeFrame(dt) {
