@@ -8,6 +8,7 @@ LOG_FILE="$PROJECT_DIR/data/hiclaw.log"
 ENV_FILE="$PROJECT_DIR/.env"
 CORE_DIR="$PROJECT_DIR/pixel-office-core"
 CORE_DASHBOARD_FILE="$PROJECT_DIR/pixel-office-core/hiclaw-dashboard.html"
+CORE_DIST_ENTRY="$PROJECT_DIR/pixel-office-core/dist/index.js"
 
 cd "$PROJECT_DIR"
 
@@ -25,6 +26,28 @@ if [ ! -d "$CORE_DIR" ]; then
 elif [ ! -f "$CORE_DASHBOARD_FILE" ]; then
     echo "Warning: core dashboard entry not found: $CORE_DASHBOARD_FILE"
     echo "  Build or restore pixel-office-core assets before using /core."
+elif [ -f "$CORE_DIR/package.json" ]; then
+    if command -v npm >/dev/null 2>&1; then
+        echo "Preparing pixel-office-core..."
+        (
+            cd "$CORE_DIR"
+            if [ ! -d "node_modules" ]; then
+                if [ -f "package-lock.json" ]; then
+                    npm ci
+                else
+                    npm install
+                fi
+            fi
+            npm run build
+        )
+    else
+        echo "Warning: npm is not available; /core may fail if $CORE_DIST_ENTRY is missing."
+    fi
+fi
+
+if [ -f "$CORE_DASHBOARD_FILE" ] && [ ! -f "$CORE_DIST_ENTRY" ]; then
+    echo "Warning: core dashboard bundle not found: $CORE_DIST_ENTRY"
+    echo "  Install Node.js/npm and run: cd pixel-office-core && npm ci && npm run build"
 fi
 
 # 读取 dashboard 配置
