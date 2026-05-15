@@ -1,29 +1,25 @@
 # HiClaw Py
 
-HiClaw Py 是一个面向个人长期运行与工程扩展的多通道 AI Agent 项目。
+HiClaw Py 是一个面向长期运行、可扩展和可观测的多通道 AI Agent 工程。
 
-它已经从“单 Provider 聊天机器人”演进为一个具备以下能力的工程基础：
+它当前已经具备：
 
 - 多通道接入：Telegram、Feishu、PowerShell TUI
 - 双 Provider 路由：Claude / OpenAI
-- 统一 capability registry：tools / workflows / skills
-- 分层记忆、定时任务、联网搜索、文件与命令执行
-- 可视化 dashboard
-- 多 Agent 集群的 **runtime foundation**（当前处于基础阶段）
+- 统一能力层：tools / workflows / skills
+- 文件读写、命令执行、联网搜索、定时任务、分层记忆
+- Dashboard 可视化：classic / v2 / core
+- 多 Agent 集群 runtime foundation：planner / executor / reviewer 基础模型与监控投影
 
-当前项目既可以作为个人智能体直接运行，也适合作为多 Agent / tool system / memory system 的工程样板。
+当前它不是一个“最终形态的自治 Agent Swarm”，但已经是一个可直接运行、可继续演进到多 Agent 协作系统的工程底座。
 
 ## 当前定位
 
-这个仓库现在不是“纯聊天机器人”，也不是“完整自治 Agent swarm”。
+- 可长期运行的个人 Agent 平台
+- 多 Provider、多工具、多工作流的工程样板
+- 正在从单 Agent 执行框架演进到多 Agent cluster runtime 的系统
 
-它当前最准确的定位是：
-
-- 一个已经稳定支持多通道、多 Provider、多工具编排的个人 Agent 平台
-- 一个已经具备 cluster runtime foundation 的多 Agent 演进中系统
-- 一个强调可扩展性和可测试性的 Python 工程
-
-## 当前能力
+## 主要能力
 
 ### 交互入口
 
@@ -31,53 +27,50 @@ HiClaw Py 是一个面向个人长期运行与工程扩展的多通道 AI Agent 
 - Feishu 长连接机器人
 - PowerShell TUI
 
-### Provider 与执行能力
+### Provider 能力
 
-- Claude Provider：适合复杂工具调用、文件修改、Bash、workflow、长链执行
-- OpenAI Provider：适合文本、图像理解、图像生成与编辑
+- Claude：更适合复杂工具调用、文件修改、长链执行、workflow 场景
+- OpenAI：更适合通用对话、图像理解、图像生成与编辑
 
 ### 能力系统
 
 - 统一 `ToolSpec` registry
 - registry-backed tool discovery
-- capability watcher / 热刷新
-- declarative workflow definitions
-- user-defined workflow CRUD
-- natural-language workflow compilation
-- workflow schema v2（支持 input / constant / step_output）
+- workflow CRUD
+- 自然语言生成 workflow
+- skill 管理与热加载
+- Tavily 联网搜索工具 `web_search`
 
 ### 运行时能力
 
 - decision layer：意图理解、能力候选排序、策略路由
-- runtime confirmation：高风险工具确认
-- scheduler：定时任务、提醒、夜间任务
-- memory system：长期记忆、工作记忆、对话归档、记忆治理
+- confirmation layer：高风险工具执行确认
+- scheduler：定时任务 / 提醒
+- memory：长期记忆、工作记忆、会话偏好
 - monitor dashboard：实时 activity snapshot
 
-### 多 Agent 集群（当前阶段）
+### 多 Agent 集群现状
 
-当前已经落地：
+已经落地：
 
-- planner / executor / reviewer 角色模型
+- `planner / executor / reviewer` 角色模型
 - cluster runtime store
-- cluster run / tasks / messages / events 基础结构
+- `runs / tasks / messages / agents / events` 基础数据结构
 - dashboard cluster projection
 
-当前尚未完全落地：
+仍在演进：
 
-- planner 的独立真实推理链
-- reviewer 的独立真实执行链
-- 多 executor 并行协作
+- planner 的真实拆解链
+- reviewer 的真实审查链
+- 多 executor 并行
 - 完整 task DAG / dependency scheduler
-
-也就是说，项目已经进入多 Agent 演进阶段，但还没有完成最终形态的自治协作系统。
 
 ## 工程结构
 
 ```text
 src/hiclaw/
-  app.py                    统一启动入口
-  config.py                 环境配置与路径定义
+  app.py                    主启动入口
+  config.py                 环境配置
 
   agents/                   Provider 执行层
     runtime.py              单轮执行总入口
@@ -85,320 +78,705 @@ src/hiclaw/
     claude.py               Claude 执行
     openai.py               OpenAI 执行
 
-  decision/                 意图理解与能力决策层
-    interpreter.py
-    router.py
-    models.py
-    trace.py
-
-  capabilities/             统一能力注册与 workflow 系统
-    tools.py
-    workflows.py
-    catalog.py
-    runtime.py
-
+  decision/                 意图理解与策略决策
+  capabilities/             tools / workflows / registry
   cluster/                  多 Agent 集群基础层
-    models.py
-    coordinator.py
-    store.py
-
   memory/                   分层记忆系统
   tasks/                    定时任务与调度
   channels/                 Telegram / Feishu / TUI
   monitor/                  dashboard server 与前端资源
-  core/                     公共类型、delivery、activity、confirmation
-  skills/                   skill 加载与管理
-  media/                    图片/语音相关处理
+  core/                     公共类型、delivery、activity 等
+  skills/                   skill 管理
+  media/                    图片 / 语音相关处理
+
+pixel-office-core/          像素办公室 core 渲染与素材
+scripts/                    Linux 启停脚本
 ```
 
-## 核心架构
+## Dashboard
 
-### 1. Channel Layer
+项目当前有 3 个 dashboard 入口：
 
-消息首先从 channel 进入：
+- classic：`/`
+- v2：`/v2`
+- core：`/core`
 
-- `channels/telegram/`
-- `channels/feishu/`
-- `channels/tui.py`
+其中：
 
-这些入口最终统一成 `ConversationRef`，然后进入 agent runtime。
+- `classic` 是早期基础看板
+- `v2` 是当前 cluster 可视化主界面
+- `core` 使用 `pixel-office-core` 独立渲染像素办公室
 
-### 2. Decision Layer
-
-`decision/` 负责：
-
-- 解析任务意图
-- 识别 request style
-- 生成 capability candidates
-- 决定走 `answer_directly / prefer_tools / prefer_workflow / prefer_skill`
-
-这是当前系统里最稳定、最像“中枢大脑”的一层。
-
-### 3. Execution Layer
-
-`agents/runtime.py::run_agent_for_conversation()` 是当前执行总入口。
-
-它负责：
-
-- 构建 decision plan
-- 尝试 workflow-first
-- 调用 Claude 或 OpenAI provider
-- 记录 trace / outcome / task line / memory preference
-
-### 4. Capability Layer
-
-`capabilities/tools.py` 是统一 registry 基础：
-
-- 工具元数据
-- provider projection
-- MCP/OpenAI 定义生成
-- confirmation policy
-- availability / risk / category
-
-`capabilities/workflows.py` 在这个 registry 之上提供 workflow 能力，而不是另起一套 provider stack。
-
-### 5. Cluster Runtime Foundation
-
-当前多 Agent 相关逻辑由两层组成：
-
-- `cluster/coordinator.py`：cluster blueprint 与角色编排
-- `cluster/store.py`：cluster runtime source of truth
-
-当前 cluster store 已保存：
-
-- `runs`
-- `tasks`
-- `messages`
-- `agents`
-- `events`
-
-dashboard 不再直接依赖 monitor 侧零散事件，而开始从 cluster runtime projection 读取 cluster 状态。
-
-### 6. Monitor Layer
-
-`monitor/server.py` 暴露 `/api/activity`，dashboard 从这个 API 拉取 snapshot。
-
-当前前端重点界面是：
-
-- `http://127.0.0.1:8765/v2`
-
-`v2` 已经开始承载 cluster 可视化演进。
-
-### 7. Pixel Office Reference
-
-`pixel-office-core` 的像素办公室渲染、角色动作、气泡、家具与素材逻辑，参考源是：
-
-- https://github.com/pablodelucca/pixel-agents
-
-后续修改 pixel 办公室相关能力时，优先对照 `pixel-agents` 的已有实现，再做稳定迁移或 HiClaw 适配。尤其是：
-
-- 角色状态动作：行走、坐下、打字、读文件、等待、阻塞、完成
-- 气泡逻辑：等待、授权、阻塞、任务完成提示
-- 家具逻辑：电脑亮屏动画、桌椅座位绑定、家具层级遮挡、墙面装饰
-- 素材组织：角色素材、家具目录、默认布局、外部素材包
-- 多 Agent 可视化：主 Agent / 子 Agent / 自定义 Agent 的状态映射
-
-原则：不要为了局部视觉效果随意改动缩放、坐标、素材层级或状态映射；先确认上游是否已有对应逻辑，再以小步、可验证的方式迁移。
+如果通过主程序启动，dashboard 会随主进程一起启动。
 
 ## 安装
 
 ### 环境要求
 
 - Python `>= 3.12`
-- Conda 或 venv
 - Git
-- 至少一种消息入口配置，或者仅使用 TUI
+- 推荐使用 `venv`
+- 如果要使用 `/core` dashboard，Linux 服务器推荐安装 Node.js 和 npm
 
-### 安装步骤
+### 1. 克隆仓库
 
-```powershell
+```bash
 git clone git@github.com:lianjiawei/hiclaw-py.git
 cd hiclaw-py
+```
 
+### 2. 创建 Python 环境
+
+Linux / macOS 推荐直接使用系统自带 `python3` + `venv`：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+说明：
+
+- 创建虚拟环境前，Linux 上优先使用 `python3`
+- 激活 `.venv` 后，后续命令统一使用 `python`
+
+Windows PowerShell：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Conda 仅作为本地开发可选项：
+
+```bash
 conda create -n hiclaw python=3.12 -y
 conda activate hiclaw
+```
 
+### 3. 安装依赖
+
+```bash
+python -m pip install -U pip
 python -m pip install -e .
 ```
 
 如果需要本地语音识别：
 
-```powershell
+```bash
 python -m pip install -e ".[asr]"
 ```
 
-## 启动方式
+### 4. 可选：为 `/core` dashboard 准备前端依赖
 
-### 主应用
+如果你会通过 Linux `scripts/start.sh` 启动，并且机器已经安装了 npm，脚本会自动在 `pixel-office-core/` 下执行：
 
-```powershell
-python -m hiclaw
-```
+- `npm ci` 或 `npm install`
+- `npm run build`
 
-或：
+如果你想手动准备：
 
-```powershell
-hiclaw
-```
-
-### TUI
-
-```powershell
-hiclaw-tui
-```
-
-### Feishu only
-
-```powershell
-hiclaw-feishu
-```
-
-### Dashboard only
-
-```powershell
-hiclaw-dashboard
+```bash
+cd pixel-office-core
+npm ci
+npm run build
+cd ..
 ```
 
 ## 配置
 
-先复制：
+### 1. 复制配置模板
+
+Linux / macOS：
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-### 最常用配置
+### 2. 最小可运行配置
+
+最少需要：
+
+- 一个可用 Provider
+- 一个可用入口
+
+#### 方案 A：TUI 本地调试
+
+只需配置 Provider：
 
 ```env
 AGENT_PROVIDER=claude
 
-TELEGRAM_BOT_TOKEN=
-OWNER_ID=
-
-FEISHU_APP_ID=
-FEISHU_APP_SECRET=
-
-ANTHROPIC_API_KEY=
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ANTHROPIC_BASE_URL=
-ANTHROPIC_MODEL=
-
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
-OPENAI_MODEL=gpt-4.1-mini
+ANTHROPIC_MODEL=your_claude_model_here
 
 WORKSPACE_DIR=./workspace
-TAVILY_API_KEY=
-SHOW_TOOL_TRACE=0
-```
-
-### Cluster 相关配置
-
-```env
-AGENT_CLUSTER_ENABLED=1
-AGENT_CLUSTER_REVIEW_ENABLED=1
-AGENT_CLUSTER_ORCHESTRATOR_ENABLED=1
-AGENT_CLUSTER_DYNAMIC_PLANNER_ENABLED=1
-AGENT_CLUSTER_MAX_EVENTS=40
+TAVILY_API_KEY=your_tavily_api_key_here
 ```
 
 说明：
 
-- `AGENT_CLUSTER_ENABLED=1`：启用 cluster foundation
-- `AGENT_CLUSTER_REVIEW_ENABLED=1`：启用 reviewer 角色
-- `AGENT_DEFINITIONS_DIR`：用户自定义 Agent JSON 定义目录，默认 `capabilities/agents`
-- `AGENT_CLUSTER_ORCHESTRATOR_ENABLED=1`：启用真实多 Agent 任务编排执行链
-- `AGENT_CLUSTER_DYNAMIC_PLANNER_ENABLED=1`：启用 planner 动态生成多 Agent DAG 任务计划
-- `AGENT_CLUSTER_MAX_EVENTS`：dashboard 投影保留的最近 cluster 事件数
+- `hiclaw-tui` 不依赖 Telegram 或 Feishu
+- 如果要联网搜索，必须配置 `TAVILY_API_KEY`
 
-### Dashboard 配置
+#### 方案 B：Telegram Bot
 
 ```env
-HICLAW_DASHBOARD_HOST=127.0.0.1
-HICLAW_DASHBOARD_PORT=8765
+AGENT_PROVIDER=claude
+
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+OWNER_ID=your_telegram_user_id_here
+
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+TAVILY_API_KEY=your_tavily_api_key_here
+WORKSPACE_DIR=./workspace
 ```
 
-打开：
+#### 方案 C：Feishu 长连接机器人
 
+```env
+AGENT_PROVIDER=openai
+
+FEISHU_APP_ID=your_feishu_app_id_here
+FEISHU_APP_SECRET=your_feishu_app_secret_here
+
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_BASE_URL=
+OPENAI_MODEL=gpt-4o-mini
+
+TAVILY_API_KEY=your_tavily_api_key_here
+WORKSPACE_DIR=./workspace
+```
+
+### 3. 常用配置项
+
+```env
+# Dashboard
+HICLAW_DASHBOARD_HOST=0.0.0.0
+HICLAW_DASHBOARD_PORT=8765
+
+# Scheduler
+SCHEDULER_INTERVAL_SECONDS=30
+
+# Tool trace
+SHOW_TOOL_TRACE=0
+
+# Session timeout
+SESSION_TIMEOUT_SECONDS=86400
+
+# Capability watcher
+CAPABILITY_WATCHER_ENABLED=1
+CAPABILITY_WATCHER_INTERVAL_SECONDS=1.0
+```
+
+说明：
+
+- 云服务器上想从公网访问 dashboard，`HICLAW_DASHBOARD_HOST` 应设为 `0.0.0.0`
+- `SHOW_TOOL_TRACE=1` 适合调试
+- `TAVILY_API_KEY` 建议始终配置，否则 `web_search` 无法使用
+
+### 4. Cluster 配置
+
+```env
+AGENT_CLUSTER_ENABLED=0
+AGENT_CLUSTER_REVIEW_ENABLED=1
+AGENT_CLUSTER_ORCHESTRATOR_ENABLED=0
+AGENT_CLUSTER_DYNAMIC_PLANNER_ENABLED=0
+AGENT_CLUSTER_MAX_EVENTS=40
+```
+
+当前建议这样理解：
+
+- `AGENT_CLUSTER_ENABLED=1`：启用 cluster foundation 与 dashboard 协作投影
+- `AGENT_CLUSTER_REVIEW_ENABLED=1`：当计划命中相应任务类型时，加入 reviewer 角色
+- `AGENT_CLUSTER_ORCHESTRATOR_ENABLED`：预留给更完整的真实多 Agent 执行链，当前不建议默认开启
+- `AGENT_CLUSTER_DYNAMIC_PLANNER_ENABLED`：预留给动态任务规划能力，当前不建议默认开启
+
+## 启动方式
+
+### 方式 1：本地 TUI
+
+```bash
+hiclaw-tui
+```
+
+适合：
+
+- 本地调试
+- 不想配置 Telegram / Feishu
+- 调试工具、workflow、memory
+
+### 方式 2：主应用
+
+```bash
+python -m hiclaw
+```
+
+或：
+
+```bash
+hiclaw
+```
+
+说明：
+
+- 这会启动已配置的消息通道
+- 也会同时启动 dashboard server
+- 如果没有配置 Telegram 或 Feishu，这个入口会直接报错；此时请使用 `hiclaw-tui`
+
+### 方式 3：Linux 服务器后台运行
+
+```bash
+./scripts/start.sh
+```
+
+停止：
+
+```bash
+./scripts/stop.sh
+```
+
+当前 `start.sh` 会做这些事：
+
+- 启动 `python -m hiclaw`
+- 检查 `.env` 中的 dashboard host / port
+- 自动输出 dashboard 访问地址
+- 检查 `/api/activity` 健康状态
+- 检查 `/core` 健康状态
+- 如果检测到 `pixel-office-core/package.json` 且系统有 npm，会自动构建 `pixel-office-core`
+
+### 方式 4：单独启动 Dashboard
+
+```bash
+hiclaw-dashboard
+```
+
+### 方式 5：只启动 Feishu 通道
+
+```bash
+hiclaw-feishu
+```
+
+## 访问地址
+
+默认端口为 `8765`。
+
+本地访问：
+
+- `http://127.0.0.1:8765/`
 - `http://127.0.0.1:8765/v2`
+- `http://127.0.0.1:8765/core`
 
-## 推荐运行模式
+云服务器访问：
 
-### 模式 A：本地开发 / 调试
+- 将 `HICLAW_DASHBOARD_HOST=0.0.0.0`
+- 开放安全组 / 防火墙端口 `8765`
 
-- 使用 `hiclaw-tui`
-- 打开 `/v2` dashboard
-- 开启 `SHOW_TOOL_TRACE=1`
-- 如需 cluster，可开启 `AGENT_CLUSTER_ENABLED=1`
+## 云服务器 Linux 部署教程
 
-### 模式 B：Telegram / Feishu 长期运行
+下面以 Ubuntu 服务器为例。
 
-- 使用 `python -m hiclaw`
-- 配置至少一个 channel
-- dashboard 可同时启用
+### 1. 准备系统环境
 
-### 模式 C：复杂文件与工具链任务
+安装基础依赖：
 
-- 优先使用 `AGENT_PROVIDER=claude`
-- 因为当前复杂工具执行和 workflow 路线更适合 Claude 路径
+```bash
+sudo apt update
+sudo apt install -y git curl python3 python3-venv python3-pip
+```
 
-### 模式 D：图像任务
+如果你要使用 `/core` dashboard，建议额外安装 Node.js 和 npm：
 
-- 可使用 `AGENT_PROVIDER=openai`
-- 配置 OpenAI 图片相关参数
+```bash
+sudo apt install -y nodejs npm
+```
+
+说明：
+
+- 没有 npm 也可以启动主程序
+- 但如果 `pixel-office-core/dist/` 丢失或你后续改了 core 前端，npm 可用于自动构建 `/core`
+
+### 2. 拉取代码
+
+```bash
+git clone git@github.com:lianjiawei/hiclaw-py.git
+cd hiclaw-py
+```
+
+如果你的服务器没有配置 SSH key，也可以使用 HTTPS：
+
+```bash
+git clone https://github.com/lianjiawei/hiclaw-py.git
+cd hiclaw-py
+```
+
+### 3. 创建虚拟环境并安装依赖
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e .
+```
+
+如果需要语音识别：
+
+```bash
+python -m pip install -e ".[asr]"
+```
+
+### 4. 配置 `.env`
+
+复制模板：
+
+```bash
+cp .env.example .env
+```
+
+然后至少修改这些项：
+
+```env
+AGENT_PROVIDER=claude
+
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+ANTHROPIC_BASE_URL=
+ANTHROPIC_MODEL=your_claude_model_here
+
+TAVILY_API_KEY=your_tavily_api_key_here
+
+HICLAW_DASHBOARD_HOST=0.0.0.0
+HICLAW_DASHBOARD_PORT=8765
+
+WORKSPACE_DIR=./workspace
+```
+
+如果你使用 Telegram，还要配置：
+
+```env
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+OWNER_ID=your_telegram_user_id_here
+```
+
+如果你使用 Feishu，还要配置：
+
+```env
+FEISHU_APP_ID=your_feishu_app_id_here
+FEISHU_APP_SECRET=your_feishu_app_secret_here
+```
+
+重要说明：
+
+- `python -m hiclaw` 需要至少一个消息通道配置成功，否则会直接报错
+- 如果你只是想在服务器上先验证工具和模型，不配 Telegram / Feishu 时请用 `hiclaw-tui`
+- 如果你要公网访问 dashboard，`HICLAW_DASHBOARD_HOST` 必须设为 `0.0.0.0`
+
+### 5. 开放端口
+
+你至少需要放行 dashboard 端口，例如 `8765`。
+
+如果使用 Ubuntu UFW：
+
+```bash
+sudo ufw allow 8765/tcp
+sudo ufw status
+```
+
+如果是云厂商服务器，还要在安全组里放行：
+
+- `8765/tcp`：dashboard
+- 如需 SSH，确保 `22/tcp` 已放行
+
+### 6. 启动服务
+
+推荐使用仓库自带脚本：
+
+```bash
+./scripts/start.sh
+```
+
+停止服务：
+
+```bash
+./scripts/stop.sh
+```
+
+`start.sh` 当前会：
+
+- 启动 `python -m hiclaw`
+- 读取 `.env` 中的 dashboard host / port
+- 打印公网访问地址
+- 检查 `/api/activity` 健康状态
+- 检查 `/core` 健康状态
+- 检测到 npm 时自动构建 `pixel-office-core`
+
+### 7. 查看访问地址
+
+启动成功后通常会看到类似输出：
+
+```text
+Dashboard: http://<your-ip>:8765 (classic) | http://<your-ip>:8765/v2
+Core Dashboard: http://<your-ip>:8765/core
+```
+
+常用页面：
+
+- `http://<your-ip>:8765/`
+- `http://<your-ip>:8765/v2`
+- `http://<your-ip>:8765/core`
+
+### 8. 查看日志
+
+日志文件默认在：
+
+```bash
+data/hiclaw.log
+```
+
+实时查看：
+
+```bash
+tail -f data/hiclaw.log
+```
+
+### 9. 常见问题排查
+
+#### 1. 启动后网页打不开
+
+先检查：
+
+- `.env` 里是否设置了 `HICLAW_DASHBOARD_HOST=0.0.0.0`
+- 云服务器安全组是否放行 `8765`
+- 系统防火墙是否放行 `8765`
+
+再检查服务日志：
+
+```bash
+tail -n 100 data/hiclaw.log
+```
+
+#### 2. `/core` 页面能打开但素材加载失败
+
+先更新到最新代码：
+
+```bash
+git pull origin master
+```
+
+如果你改过 `pixel-office-core`，可以手工重建：
+
+```bash
+cd pixel-office-core
+npm ci
+npm run build
+cd ..
+```
+
+然后重启：
+
+```bash
+./scripts/stop.sh
+./scripts/start.sh
+```
+
+#### 3. 联网搜索不生效
+
+检查 `.env` 是否配置：
+
+```env
+TAVILY_API_KEY=your_tavily_api_key_here
+```
+
+当前联网搜索统一走 `web_search -> Tavily`。
+
+#### 4. 主程序启动直接报错
+
+通常是因为没有配置任何可用消息通道。
+
+解决方式：
+
+- 配置 Telegram 或 Feishu 后再运行 `python -m hiclaw`
+- 或改为使用本地 `hiclaw-tui`
+
+### 10. 更新代码
+
+服务器更新推荐流程：
+
+```bash
+git pull origin master
+source .venv/bin/activate
+python -m pip install -e .
+./scripts/stop.sh
+./scripts/start.sh
+```
+
+如果 `pixel-office-core` 有变更且服务器已安装 npm，`start.sh` 会自动重建；也可以手工执行 `npm run build`。
+
+## 联网搜索说明
+
+当前联网搜索统一通过工具 `web_search` 完成，后端为 Tavily。
+
+需要配置：
+
+```env
+TAVILY_API_KEY=your_tavily_api_key_here
+TAVILY_SEARCH_DEPTH=basic
+TAVILY_MAX_RESULTS=5
+```
+
+未配置 `TAVILY_API_KEY` 时，联网搜索不会生效。
+
+## Pixel Office Core 说明
+
+`pixel-office-core/` 已作为仓库的一部分追踪上传，包含：
+
+- `src/` 源码
+- `dist/` 构建产物
+- `public/assets/` 素材资源
+- `hiclaw-dashboard.html/js` 入口文件
+
+`/core` 页面直接由 `monitor/server.py` 映射为静态资源，不需要单独再启动一个 Node 服务。
+
+只有在你单独开发 `pixel-office-core` 前端时，才需要手工进入该目录运行 npm 命令。
 
 ## 测试
 
-运行全量测试：
+运行测试：
 
-```powershell
+```bash
 python -m pytest test/ tests/ -q
 ```
 
-当前工程已经有较完整的回归测试覆盖，包括：
+当前测试覆盖重点包括：
 
 - tool registry
 - memory system
-- session optimization
-- semantic understanding
+- session / decision / workflow 路由
 - cluster runtime foundation
 
-## 当前已知边界
+## 当前边界
 
-### 已经稳定的部分
+稳定部分：
 
 - 多通道入口
 - 双 Provider 基础路由
-- tool/workflow registry
+- tool / workflow / skill registry
 - memory / scheduler / dashboard
 - cluster runtime foundation
 
-### 正在演进的部分
+演进中部分：
 
-- 多 Agent 的真实独立执行链
-- planner / reviewer 真正成为独立 agent
+- planner / reviewer 的真实独立执行链
+- 多 Agent 编排闭环
 - task DAG / dependency scheduling
+- 完整 cluster dashboard 可视化闭环
+
+## 面向行业企业 Agent 的继续优化方向
+
+如果你希望把当前项目继续演进成更适合行业和企业场景的 Agent 平台，建议重点从下面几个方向推进。
+
+### 1. 安全与治理
+
+当前已经有工具确认机制，但企业场景通常还需要继续加强：
+
+- 更细粒度的权限模型：按用户、部门、通道、工具、目录、数据源分别授权
+- 多级审批：高风险命令、外发消息、外部写入、批量文件修改走审批链
+- 操作审计：完整记录谁在什么时间调用了什么工具、读写了什么资源
+- 敏感信息保护：API Key、个人信息、合同文本、内部文档自动脱敏
+- 沙箱执行：把 Bash、脚本、外部下载等高风险能力隔离到受控运行环境
+
+### 2. 记忆系统升级
+
+当前已有分层记忆，但企业 Agent 往往需要更强的长期记忆治理能力：
+
+- 记忆分级：个人记忆、团队记忆、组织级知识分层隔离
+- 生命周期管理：记忆创建、过期、归档、删除、回溯
+- 可解释记忆：回答时标明用了哪段记忆、为什么命中
+- 记忆冲突处理：旧知识与新知识冲突时的优先级和审查机制
+- 任务记忆闭环：把长期项目中的关键结论、风险、待办沉淀为可复用状态
+
+### 3. 知识库深度结合
+
+企业 Agent 的价值很大程度上来自“能否真正理解企业知识”。建议后续重点补齐：
+
+- 多数据源接入：本地文件、NAS、SharePoint、飞书文档、Confluence、数据库
+- 文档解析增强：PDF、Word、Excel、扫描件、表格附件、制度文档
+- RAG 检索链路：索引、召回、重排、片段引用、来源追踪
+- 知识更新机制：文档变更后自动增量同步和索引刷新
+- 知识权限隔离：不同用户只能检索自己有权访问的知识范围
+
+### 4. 长时间任务执行
+
+很多企业场景不是“一问一答”，而是数分钟、数小时甚至跨天执行的任务：
+
+- 长任务状态机：排队、执行中、等待审批、等待外部系统、已完成、失败
+- 断点续跑：进程重启后恢复上下文和任务进度
+- 任务编排：把复杂任务拆成阶段、子任务和依赖关系
+- 异步通知：任务完成、失败、需审批时主动通知 Telegram / Feishu / 邮件
+- 结果归档：任务执行结果、附件、日志、审计记录统一沉淀
+
+### 5. 多 Agent 协作深化
+
+当前项目已经有 cluster runtime foundation，后续可以进一步变成真实企业协作系统：
+
+- planner 真实任务拆解
+- reviewer 独立复核链
+- specialist agents：法务、财务、运维、数据分析、项目经理等角色化 Agent
 - agent-to-agent message protocol
-- dashboard 完整 cluster 可视化
+- 并行 executor 与任务优先级调度
 
-## 推荐的下一步架构演进
+### 6. 企业系统集成
 
-当前最合理的演进顺序是：
+行业场景里，Agent 只有真正接入业务系统后才有生产力：
 
-1. `Cluster Runtime Foundation` 已完成
-2. 实现真实 `planner / reviewer` 执行链
-3. 引入 `ClusterTask` dependency graph
-4. 引入 agent-to-agent message protocol
-5. 支持多 executor 并行
-6. 让 dashboard 完整基于 cluster projection 展示 tasks/messages
+- ERP / CRM / OA / 工单 / 合同 / 招采系统集成
+- 数据库只读查询与受控写入
+- 邮件、日历、IM、文档系统联动
+- 企业身份体系对接：SSO、组织架构、角色同步
+- 外部 API 编排：将业务操作沉淀为 workflows
+
+### 7. 可观测性与运营
+
+企业场景不仅要能跑，还要能被监控、分析和持续优化：
+
+- 全链路 tracing：从用户请求到工具调用到最终结果
+- 任务耗时、成功率、失败率统计
+- 常见失败原因聚类
+- 成本监控：模型调用、搜索调用、长任务资源消耗
+- Dashboard 进一步演进为运维和运营双视图
+
+### 8. 交付形态建议
+
+如果面向行业客户交付，建议把当前仓库继续演进成以下层次：
+
+- Agent Runtime Layer：保留当前执行内核
+- Knowledge Layer：企业知识库与权限检索
+- Workflow Layer：沉淀行业 SOP 和审批流
+- Governance Layer：审计、安全、权限、合规
+- Operations Layer：监控、告警、统计、版本发布
+
+### 9. 推荐演进顺序
+
+如果按投入产出比排序，建议优先级如下：
+
+1. 安全与权限治理
+2. 知识库与 RAG 深度结合
+3. 长任务执行与断点恢复
+4. 记忆系统升级
+5. 多 Agent 真实协作闭环
+6. 行业系统集成与运营面板
+
+这样能让项目先具备企业可落地性，再逐步增强自治能力。
 
 ## 适合谁使用
 
 这个项目适合：
 
 - 想长期运行个人 Agent 的开发者
-- 想研究 Claude / OpenAI 双 Provider 编排的人
 - 想做 tool registry / workflow / memory / scheduler / cluster runtime 的工程实践者
-- 想把单 Agent 系统演进成多 Agent 系统的团队
-
-如果你的目标是“直接拿来当最终成品 swarm 平台”，当前仓库还在演进中；
-如果你的目标是“在一个真实工程里继续向多 Agent 体系推进”，它现在已经是一个合适的基础。
+- 想把单 Agent 系统逐步演进成多 Agent 系统的团队
