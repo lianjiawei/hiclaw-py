@@ -64,7 +64,11 @@
     }
 
     return agents
-      .map((agent) => `<div class="run-item"><strong>${agent.name || agent.agent_id}</strong><span>${agent.role || "agent"} · ${agent.status || "idle"}</span><span>${agent.summary || "暂无摘要"}</span></div>`)
+      .map((agent) => {
+        const review = agent.review_outcome ? ` · review=${agent.review_outcome}` : "";
+        const attempts = agent.attempt_count ? ` · attempts=${agent.attempt_count}` : "";
+        return `<div class="run-item"><strong>${agent.name || agent.agent_id}</strong><span>${agent.role || "agent"} · ${agent.status || "idle"}${review}${attempts}</span><span>${agent.summary || "暂无摘要"}</span></div>`;
+      })
       .join("");
   }
 

@@ -644,6 +644,26 @@ TAVILY_MAX_RESULTS=5
 
 只有在你单独开发 `pixel-office-core` 前端时，才需要手工进入该目录运行 npm 命令。
 
+### 后续开发约束
+
+`pixel-office-core` 的办公室渲染、素材组织、角色移动、状态表达和气泡逻辑，后续优化时应优先参考：
+
+- https://github.com/pablodelucca/pixel-agents
+
+这意味着后续优化 `/core` 时，优先遵循以下原则：
+
+- 优先参考 `pixel-agents` 的既有素材组织和渲染分层
+- 优先参考其角色移动、路径、站位、工位行为逻辑
+- 优先参考其状态动画、气泡提示、家具交互和空间表达方式
+- 在其成熟逻辑基础上做 HiClaw 的 `planner / executor / reviewer` 状态映射
+- 尽量避免脱离参考项目而单独发明一整套新的办公室行为系统
+
+也就是说，后续 `/core` 的优化方向应当是：
+
+- 先对照 `pixel-agents`
+- 再做稳定迁移
+- 最后做 HiClaw 的多 Agent 状态适配
+
 ## 测试
 
 运行测试：

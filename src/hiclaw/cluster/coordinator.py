@@ -59,8 +59,6 @@ def build_cluster_blueprint(plan: DecisionPlan) -> ClusterBlueprint:
         f"理解任务与策略：{plan.summary or plan.task_intent.goal}",
         f"执行主任务：{plan.task_intent.expected_output or plan.task_intent.goal}",
     ]
-    if any(agent.role == "reviewer" for agent in agents):
-        steps.append("复核执行结果并输出协作结论")
     return ClusterBlueprint(
         cluster_id=cluster_id,
         mode="collaborative",

@@ -13,7 +13,14 @@ from hiclaw.core.types import ConversationRef
 
 from .models import ClusterBlueprint, ClusterTask
 from .planner import ClusterPlanError, cluster_tasks_from_planner_plan, parse_planner_task_plan
-from .store import build_cluster_tasks_from_blueprint, mark_cluster_task_finished, mark_cluster_task_started, record_cluster_event, replace_cluster_tasks
+from .store import (
+    build_cluster_tasks_from_blueprint,
+    mark_cluster_task_finished,
+    mark_cluster_task_reviewed,
+    mark_cluster_task_started,
+    record_cluster_event,
+    replace_cluster_tasks,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +170,43 @@ def _planner_agent_id(blueprint: ClusterBlueprint) -> str:
     return "planner"
 
 
+def _reviewer_agent_id(blueprint: ClusterBlueprint) -> str:
+    for agent in blueprint.agents:
+        if agent.role == "reviewer":
+            return agent.agent_id
+    return "reviewer"
+
+
+def _has_reviewer(blueprint: ClusterBlueprint) -> bool:
+    return any(agent.role == "reviewer" for agent in blueprint.agents)
+
+
+def _has_explicit_reviewer_task(cluster_tasks: tuple[ClusterTask, ...], task_id: str, reviewer_id: str) -> bool:
+    return any(
+        task.assigned_agent == reviewer_id and task_id in task.depends_on
+        for task in cluster_tasks
+    )
+
+
+def _executor_task_needs_retry(result: AgentTaskResult) -> tuple[bool, str, str]:
+    text = (result.text or "").strip()
+    if not text:
+        return True, "changes_requested", "Reviewer requested changes: executor output is empty."
+    lowered = text.lower()
+    if any(marker in lowered for marker in ("need more info", "insufficient", "unknown", "无法", "缺少", "未完成")):
+        return True, "changes_requested", "Reviewer requested changes: executor result looks incomplete."
+    return False, "approved", "Reviewer approved executor result."
+
+
+def _review_result_to_outcome(text: str) -> tuple[bool, str, str]:
+    normalized = (text or "").strip().lower()
+    if any(marker in normalized for marker in ("changes requested", "request changes", "needs changes", "返工", "修改", "补充")):
+        return True, "changes_requested", text.strip() or "Reviewer requested changes."
+    if any(marker in normalized for marker in ("reject", "rejected", "驳回", "拒绝")):
+        return True, "rejected", text.strip() or "Reviewer rejected the executor result."
+    return False, "approved", text.strip() or "Reviewer approved executor result."
+
+
 def _available_agents_text(blueprint: ClusterBlueprint) -> str:
     lines: list[str] = []
     for agent in blueprint.agents:
@@ -225,6 +269,9 @@ async def run_cluster_tasks_serial(
         replace_cluster_tasks(blueprint.cluster_id, cluster_tasks)
 
     pending = {task.task_id: task for task in cluster_tasks}
+    task_index = {task.task_id: task for task in cluster_tasks}
+    reviewer_id = _reviewer_agent_id(blueprint)
+    reviewer_enabled = _has_reviewer(blueprint)
 
     async def run_one(cluster_task: ClusterTask) -> AgentTaskResult:
         spec_name = _agent_spec_name_for_task(blueprint, cluster_task)
@@ -257,6 +304,45 @@ async def run_cluster_tasks_serial(
         )
         return result
 
+    async def review_executor_result(cluster_task: ClusterTask, result: AgentTaskResult) -> tuple[bool, str]:
+        if not reviewer_enabled:
+            return True, ""
+        review_task = ClusterTask(
+            task_id=f"{cluster_task.task_id}:review:{cluster_task.attempt_count + 1}",
+            cluster_id=cluster_task.cluster_id,
+            title=f"复核任务结果：{cluster_task.title}",
+            assigned_agent=reviewer_id,
+            input_payload=(
+                f"请复核 executor 任务结果。\n\n"
+                f"原任务：{cluster_task.title}\n"
+                f"任务输入：{cluster_task.input_payload}\n\n"
+                f"执行结果：\n{result.text}\n\n"
+                "要求：判断结果是否可直接交付；若不完整，明确要求返工。"
+            ),
+            output_payload="输出简洁的审查结论。",
+        )
+        review_result = await run_one(review_task)
+        results.append(review_result)
+        needs_retry, outcome, fallback_summary = _executor_task_needs_retry(result)
+        summary = review_result.text.strip() or fallback_summary
+        attempt_count = cluster_task.attempt_count + 1
+        next_state = "ready" if needs_retry else "done"
+        final_outcome = "changes_requested" if needs_retry else "approved"
+        if attempt_count >= cluster_task.max_attempts and needs_retry:
+            final_outcome = "rejected"
+            next_state = "error"
+            summary = review_result.text.strip() or "Reviewer rejected executor result after max attempts."
+        mark_cluster_task_reviewed(
+            blueprint.cluster_id,
+            cluster_task.task_id,
+            reviewer_id,
+            outcome=final_outcome,
+            summary=summary,
+            next_state=next_state,
+            attempt_count=attempt_count,
+        )
+        return (final_outcome == "approved"), summary
+
     while pending:
         ready = [
             task
@@ -274,16 +360,128 @@ async def run_cluster_tasks_serial(
 
         layer_results = await asyncio.gather(*(run_one(task) for task in ready))
         for cluster_task, result in zip(ready, layer_results):
-            pending.pop(cluster_task.task_id, None)
-            completed_by_id[cluster_task.task_id] = result
             results.append(result)
             if not result.success:
+                pending.pop(cluster_task.task_id, None)
+                completed_by_id[cluster_task.task_id] = result
                 return ClusterOrchestrationResult(
                     cluster_id=blueprint.cluster_id,
                     success=False,
                     task_results=tuple(results),
                     error=result.error,
                 )
+            if any(agent.agent_id == cluster_task.assigned_agent and agent.role == "reviewer" for agent in blueprint.agents) and cluster_task.depends_on:
+                target_task_id = cluster_task.depends_on[-1]
+                current = task_index.get(target_task_id)
+                needs_retry, outcome, review_summary = _review_result_to_outcome(result.text)
+                if current is not None:
+                    next_attempt = max(1, current.attempt_count or 1)
+                    next_state = "ready" if outcome == "changes_requested" else ("error" if outcome == "rejected" else "done")
+                    mark_cluster_task_reviewed(
+                        blueprint.cluster_id,
+                        target_task_id,
+                        cluster_task.assigned_agent,
+                        outcome=outcome,
+                        summary=review_summary,
+                        next_state=next_state,
+                        attempt_count=next_attempt,
+                    )
+                    if outcome == "changes_requested":
+                        if next_attempt >= current.max_attempts:
+                            failed_result = AgentTaskResult(
+                                agent_name=cluster_task.assigned_agent,
+                                task_id=target_task_id,
+                                text="",
+                                success=False,
+                                error=review_summary,
+                            )
+                            pending.pop(cluster_task.task_id, None)
+                            completed_by_id[cluster_task.task_id] = result
+                            results.append(failed_result)
+                            return ClusterOrchestrationResult(
+                                cluster_id=blueprint.cluster_id,
+                                success=False,
+                                task_results=tuple(results),
+                                error=review_summary,
+                            )
+                        retried_task = ClusterTask(
+                            task_id=current.task_id,
+                            cluster_id=current.cluster_id,
+                            title=current.title,
+                            assigned_agent=current.assigned_agent,
+                            state="queued",
+                            depends_on=current.depends_on,
+                            input_payload=current.input_payload,
+                            output_payload=current.output_payload,
+                            attempt_count=next_attempt,
+                            max_attempts=current.max_attempts,
+                            review_outcome="changes_requested",
+                            review_summary=review_summary,
+                        )
+                        task_index[target_task_id] = retried_task
+                        pending[target_task_id] = retried_task
+                    elif outcome == "rejected":
+                        failed_result = AgentTaskResult(
+                            agent_name=cluster_task.assigned_agent,
+                            task_id=target_task_id,
+                            text="",
+                            success=False,
+                            error=review_summary,
+                        )
+                        pending.pop(cluster_task.task_id, None)
+                        completed_by_id[cluster_task.task_id] = result
+                        results.append(failed_result)
+                        return ClusterOrchestrationResult(
+                            cluster_id=blueprint.cluster_id,
+                            success=False,
+                            task_results=tuple(results),
+                            error=review_summary,
+                        )
+            if (
+                any(agent.agent_id == cluster_task.assigned_agent and agent.role == "executor" for agent in blueprint.agents)
+                and not _has_explicit_reviewer_task(cluster_tasks, cluster_task.task_id, reviewer_id)
+            ):
+                approved, review_summary = await review_executor_result(cluster_task, result)
+                if not approved:
+                    current = task_index[cluster_task.task_id]
+                    next_attempt = current.attempt_count + 1
+                    max_attempts = current.max_attempts
+                    if next_attempt >= max_attempts:
+                        failed_result = AgentTaskResult(
+                            agent_name=reviewer_id,
+                            task_id=cluster_task.task_id,
+                            text="",
+                            success=False,
+                            error=review_summary,
+                        )
+                        pending.pop(cluster_task.task_id, None)
+                        results.append(failed_result)
+                        completed_by_id[cluster_task.task_id] = failed_result
+                        return ClusterOrchestrationResult(
+                            cluster_id=blueprint.cluster_id,
+                            success=False,
+                            task_results=tuple(results),
+                            error=review_summary,
+                        )
+                    retried_task = ClusterTask(
+                        task_id=current.task_id,
+                        cluster_id=current.cluster_id,
+                        title=current.title,
+                        assigned_agent=current.assigned_agent,
+                        state="queued",
+                        depends_on=current.depends_on,
+                        input_payload=current.input_payload,
+                        output_payload=current.output_payload,
+                        attempt_count=next_attempt,
+                        max_attempts=current.max_attempts,
+                        review_outcome="changes_requested",
+                        review_summary=review_summary,
+                    )
+                    task_index[cluster_task.task_id] = retried_task
+                    pending[cluster_task.task_id] = retried_task
+                    continue
+            pending.pop(cluster_task.task_id, None)
+            completed_by_id[cluster_task.task_id] = result
 
     return ClusterOrchestrationResult(
         cluster_id=blueprint.cluster_id,

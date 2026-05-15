@@ -149,6 +149,10 @@ def _status(entry: dict[str, Any]) -> str:
 def _mode_for_entry(entry: dict[str, Any]) -> str:
     status = _status(entry)
     role = _role(entry)
+    if status == "planning":
+        return "thinking"
+    if status == "reviewing":
+        return "thinking"
     if status == "working":
         return "working" if role == "executor" else "thinking"
     if status == "queued":
@@ -228,6 +232,10 @@ def _status_text(entry: dict[str, Any]) -> str:
         if role == "reviewer":
             return "\u590d\u6838\u4e2d"
         return "\u6267\u884c\u4e2d"
+    if status == "planning":
+        return "\u89c4\u5212\u4e2d"
+    if status == "reviewing":
+        return "\u590d\u6838\u4e2d"
     if status == "waiting":
         return "\u9700\u8981\u6388\u6743" if _is_permission_wait(entry) else "\u7b49\u5f85\u4e2d"
     if status == "error":

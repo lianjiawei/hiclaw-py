@@ -4,14 +4,16 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 ClusterAgentRole = Literal["planner", "executor", "reviewer"]
-ClusterRunState = Literal["queued", "working", "waiting", "done", "error"]
-ClusterTaskState = Literal["queued", "in_progress", "waiting", "done", "error"]
+ClusterRunState = Literal["queued", "planning", "working", "reviewing", "waiting", "done", "error"]
+ClusterTaskState = Literal["queued", "ready", "in_progress", "review_required", "waiting", "done", "error"]
+ClusterReviewOutcome = Literal["pending", "approved", "changes_requested", "rejected"]
 ClusterEventKind = Literal[
     "cluster_started",
     "task_dispatched",
     "task_started",
     "task_finished",
     "task_failed",
+    "task_reviewed",
     "agent_started",
     "agent_note",
     "agent_finished",
@@ -55,6 +57,10 @@ class ClusterTask:
     depends_on: tuple[str, ...] = ()
     input_payload: str = ""
     output_payload: str = ""
+    attempt_count: int = 0
+    max_attempts: int = 2
+    review_outcome: ClusterReviewOutcome = "pending"
+    review_summary: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,3 +85,5 @@ class ClusterRun:
     agents: tuple[ClusterAgent, ...] = field(default_factory=tuple)
     tasks: tuple[ClusterTask, ...] = field(default_factory=tuple)
     messages: tuple[ClusterMessage, ...] = field(default_factory=tuple)
+    current_task_id: str = ""
+    current_role: str = ""

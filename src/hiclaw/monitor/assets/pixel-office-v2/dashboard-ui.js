@@ -8,10 +8,16 @@
     tool: document.getElementById("v2Tool"),
     lastActive: document.getElementById("v2LastActive"),
     channel: document.getElementById("v2Channel"),
+    currentRole: document.getElementById("v2CurrentRole"),
+    currentTaskId: document.getElementById("v2CurrentTaskId"),
+    reviewState: document.getElementById("v2ReviewState"),
+    attemptCount: document.getElementById("v2AttemptCount"),
     activeRunsBadge: document.getElementById("v2ActiveRunsBadge"),
     runList: document.getElementById("v2RunList"),
     clusterStateBadge: document.getElementById("v2ClusterStateBadge"),
     eventList: document.getElementById("v2EventList"),
+    taskBoardBadge: document.getElementById("v2TaskBoardBadge"),
+    taskList: document.getElementById("v2TaskList"),
   };
 
   function setText(node, value) {
@@ -43,13 +49,34 @@
   function formatStatus(state) {
     const mapping = {
       idle: "空闲",
+      planning: "规划中",
       working: "工作中",
+      reviewing: "复核中",
       waiting: "等待中",
       offline: "离线",
       done: "已完成",
       error: "异常",
     };
     return mapping[state || "idle"] || String(state || "空闲");
+  }
+
+  function formatRole(role) {
+    const mapping = {
+      planner: "规划员",
+      executor: "执行员",
+      reviewer: "复核员",
+    };
+    return mapping[String(role || "").toLowerCase()] || (role || "-");
+  }
+
+  function formatReview(outcome) {
+    const mapping = {
+      pending: "待复核",
+      approved: "已通过",
+      changes_requested: "需返工",
+      rejected: "已驳回",
+    };
+    return mapping[String(outcome || "").toLowerCase()] || (outcome || "-");
   }
 
   function formatToolLabel(toolName) {
@@ -102,10 +129,31 @@
       .join("");
   }
 
+  function buildTaskListHtml(tasks) {
+    if (!tasks.length) {
+      return '<div class="v2-run-item timeline"><strong>当前没有 cluster 任务</strong><span>进入多智能体协作后会显示任务状态。</span></div>';
+    }
+
+    return tasks
+      .map((task) => {
+        const title = escapeHtml(truncate(task.title || task.task_id || "任务", 78));
+        const state = escapeHtml(formatStatus(task.state || "queued"));
+        const review = escapeHtml(formatReview(task.review_outcome || "pending"));
+        const attempt = Number(task.attempt_count || 0);
+        const maxAttempts = Number(task.max_attempts || 0);
+        const meta = escapeHtml(`${task.assigned_agent || "agent"} / ${state} / ${review}`);
+        const detail = escapeHtml(`尝试 ${attempt}${maxAttempts ? `/${maxAttempts}` : ""} · ${truncate(task.review_summary || task.output_payload || task.input_payload || "", 90)}`);
+        return `<div class="v2-run-item timeline"><strong>${title}</strong><span class="v2-item-meta">${meta}</span><span>${detail}</span></div>`;
+      })
+      .join("");
+  }
+
   function updateDashboardUi(snapshot) {
     const agentData = snapshot.agent || {};
     const cluster = snapshot.cluster || {};
     const agents = Array.isArray(snapshot.agents) ? snapshot.agents.filter((agent) => agent && agent.role !== "primary") : [];
+    const tasks = Array.isArray(cluster.tasks) ? cluster.tasks : [];
+    const currentTask = tasks.find((task) => task && task.task_id === cluster.current_task_id) || null;
     const state = agentData.state || "idle";
     const runs = Array.isArray(agentData.active_runs) ? agentData.active_runs : [];
     const palette = {
@@ -125,17 +173,25 @@
     setText(ui.task, agentData.current_task || cluster.objective || "当前没有任务");
     setText(ui.tool, formatToolLabel(agentData.current_tool || agentData.tool_status || ""));
     setText(ui.channel, agentData.last_channel || "-");
+    setText(ui.currentRole, formatRole(cluster.current_role || ""));
+    setText(ui.currentTaskId, cluster.current_task_id || "-");
+    setText(ui.reviewState, formatReview((currentTask || {}).review_outcome || ""));
+    setText(ui.attemptCount, currentTask ? `${currentTask.attempt_count || 0}${currentTask.max_attempts ? `/${currentTask.max_attempts}` : ""}` : "-");
     setText(ui.lastActive, formatTime(agentData.last_active_at));
     setText(ui.activeRunsBadge, String(agentData.active_runs_count || 0));
     const clusterState = formatStatus(cluster.state || "idle");
     const clusterBadge = agents.length ? `${clusterState} / ${agents.length} 个智能体` : clusterState;
     setText(ui.clusterStateBadge, clusterBadge);
+    setText(ui.taskBoardBadge, `${tasks.length} 个任务`);
 
     if (ui.runList) {
       ui.runList.innerHTML = buildRunListHtml(runs);
     }
     if (ui.eventList) {
       ui.eventList.innerHTML = buildEventListHtml(Array.isArray(cluster.events) ? cluster.events : []);
+    }
+    if (ui.taskList) {
+      ui.taskList.innerHTML = buildTaskListHtml(tasks);
     }
   }
 

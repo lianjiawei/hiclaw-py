@@ -37,6 +37,22 @@
             <p class="v2-label">通道</p>
             <p class="v2-meta-value" id="v2Channel">-</p>
           </div>
+          <div>
+            <p class="v2-label">当前角色</p>
+            <p class="v2-meta-value" id="v2CurrentRole">-</p>
+          </div>
+          <div>
+            <p class="v2-label">当前任务 ID</p>
+            <p class="v2-meta-value" id="v2CurrentTaskId">-</p>
+          </div>
+          <div>
+            <p class="v2-label">复核状态</p>
+            <p class="v2-meta-value" id="v2ReviewState">-</p>
+          </div>
+          <div>
+            <p class="v2-label">尝试次数</p>
+            <p class="v2-meta-value" id="v2AttemptCount">-</p>
+          </div>
           <div class="v2-signal-wide">
             <p class="v2-label">最近活跃</p>
             <p class="v2-meta-value" id="v2LastActive">-</p>
@@ -50,6 +66,16 @@
           <span class="v2-run-badge" id="v2ClusterStateBadge">空闲</span>
         </div>
         <div class="v2-run-list v2-timeline-list" id="v2EventList"></div>
+      </section>
+    </section>
+
+    <section class="v2-overview" style="display:flex;gap:12px;align-items:stretch;margin-top:12px;">
+      <section class="v2-card" style="flex:1 1 0;display:flex;flex-direction:column;min-width:0;">
+        <div class="v2-card-head">
+          <p class="v2-label">任务看板</p>
+          <span class="v2-run-badge" id="v2TaskBoardBadge">0 个任务</span>
+        </div>
+        <div class="v2-run-list v2-timeline-list" id="v2TaskList"></div>
       </section>
     </section>
 

@@ -9,7 +9,7 @@ from uuid import uuid4
 from hiclaw.config import AGENT_CLUSTER_MAX_EVENTS, CLUSTER_RUNTIME_FILE
 from hiclaw.core.types import ConversationRef
 
-from .models import ClusterAgent, ClusterBlueprint, ClusterTask
+from .models import ClusterAgent, ClusterBlueprint, ClusterReviewOutcome, ClusterTask
 
 _STORE_LOCK = Lock()
 COMPLETED_RUN_DASHBOARD_TTL_SECONDS = 30
@@ -105,12 +105,8 @@ def build_cluster_tasks_from_blueprint(blueprint: ClusterBlueprint) -> tuple[Clu
     tasks: list[ClusterTask] = []
     planner_id = _agent_id_for_role(blueprint, "planner", "planner")
     executor_id = _agent_id_for_role(blueprint, "executor", "executor")
-    reviewer_id = _agent_id_for_role(blueprint, "reviewer", "reviewer")
-    has_reviewer = any(agent.role == "reviewer" for agent in blueprint.agents)
     for index, step in enumerate(blueprint.planned_steps, start=1):
         assigned_agent = planner_id if index == 1 else executor_id
-        if index == len(blueprint.planned_steps) and has_reviewer:
-            assigned_agent = reviewer_id
         tasks.append(
             ClusterTask(
                 task_id=f"{blueprint.cluster_id}:task:{index}",
@@ -138,6 +134,10 @@ def _task_entries_from_tasks(tasks: tuple[ClusterTask, ...]) -> list[dict[str, A
             "depends_on": list(task.depends_on),
             "input_payload": task.input_payload,
             "output_payload": task.output_payload,
+            "attempt_count": task.attempt_count,
+            "max_attempts": task.max_attempts,
+            "review_outcome": task.review_outcome,
+            "review_summary": task.review_summary,
         }
         for task in tasks
     ]
@@ -222,13 +222,15 @@ def start_cluster_run(conversation: ConversationRef, blueprint: ClusterBlueprint
             "channel": conversation.channel,
             "objective": _compact(blueprint.objective, 180),
             "mode": blueprint.mode,
-            "state": "working",
+            "state": "planning",
             "agents": _build_agent_entries(blueprint.agents),
             "tasks": _build_task_entries(blueprint),
             "messages": [],
             "events": [],
             "planned_steps": list(blueprint.planned_steps),
             "active_agents": [agent.agent_id for agent in blueprint.agents],
+            "current_task_id": "",
+            "current_role": "planner",
             "created_at": now,
             "updated_at": now,
             "last_event_at": now,
@@ -335,13 +337,48 @@ def _set_task_state_by_id(run: dict[str, Any], task_id: str, state: str, output_
     run["tasks"] = tasks
 
 
+def _update_task_by_id(
+    run: dict[str, Any],
+    task_id: str,
+    *,
+    state: str | None = None,
+    output_payload: str | None = None,
+    attempt_count: int | None = None,
+    review_outcome: ClusterReviewOutcome | None = None,
+    review_summary: str | None = None,
+) -> None:
+    tasks = list(run.get("tasks") or [])
+    for task in tasks:
+        if task.get("task_id") != task_id:
+            continue
+        if state is not None:
+            task["state"] = state
+        if output_payload is not None:
+            task["output_payload"] = _compact(output_payload, 220)
+        if attempt_count is not None:
+            task["attempt_count"] = max(0, int(attempt_count))
+        if review_outcome is not None:
+            task["review_outcome"] = review_outcome
+        if review_summary is not None:
+            task["review_summary"] = _compact(review_summary, 220)
+        break
+    run["tasks"] = tasks
+
+
+def _set_current_execution(run: dict[str, Any], *, task_id: str = "", role: str = "") -> None:
+    run["current_task_id"] = task_id
+    run["current_role"] = role
+
+
 def mark_cluster_task_started(cluster_id: str, task_id: str, agent_id: str, summary: str) -> None:
     def mutator(state: dict[str, Any]) -> None:
         runs = dict(state.get("runs") or {})
         run = dict(runs.get(cluster_id) or {})
         if not run:
             return
-        run["state"] = "working"
+        role = str((run.get("agents") or {}).get(agent_id, {}).get("role") or agent_id)
+        run["state"] = "reviewing" if role == "reviewer" else "working"
+        _set_current_execution(run, task_id=task_id, role=role)
         _set_agent_status(run, agent_id, status="working", summary=summary)
         _set_task_state_by_id(run, task_id, "in_progress")
         _append_event(run, kind="task_started", agent_id=agent_id, summary=summary, detail=task_id)
@@ -358,7 +395,8 @@ def mark_cluster_task_finished(cluster_id: str, task_id: str, agent_id: str, out
         run = dict(runs.get(cluster_id) or {})
         if not run:
             return
-        task_state = "done" if success else "error"
+        role = str((run.get("agents") or {}).get(agent_id, {}).get("role") or agent_id)
+        task_state = "review_required" if success and role == "executor" else ("done" if success else "error")
         agent_state = "done" if success else "error"
         event_kind = "task_finished" if success else "task_failed"
         message_kind = "result" if success else "error"
@@ -368,8 +406,13 @@ def mark_cluster_task_finished(cluster_id: str, task_id: str, agent_id: str, out
         _append_message(run, from_agent=agent_id, to_agent="cluster", kind=message_kind, content=output)
         if not success:
             run["state"] = "error"
+            _set_current_execution(run, task_id=task_id, role=role)
+        elif role == "executor":
+            run["state"] = "reviewing"
+            _set_current_execution(run, task_id=task_id, role="reviewer")
         else:
             run["state"] = "working"
+            _set_current_execution(run)
         run["updated_at"] = _now_iso()
         runs[cluster_id] = run
         state["runs"] = runs
@@ -384,6 +427,7 @@ def finish_cluster_run(cluster_id: str, success: bool, summary: str) -> None:
         if not run:
             return
         run["state"] = "done" if success else "error"
+        _set_current_execution(run)
         _append_event(
             run,
             kind="cluster_finished",
@@ -399,13 +443,55 @@ def finish_cluster_run(cluster_id: str, success: bool, summary: str) -> None:
     _update_state(mutator)
 
 
+def mark_cluster_task_reviewed(
+    cluster_id: str,
+    task_id: str,
+    reviewer_agent_id: str,
+    *,
+    outcome: ClusterReviewOutcome,
+    summary: str,
+    next_state: str,
+    attempt_count: int | None = None,
+) -> None:
+    def mutator(state: dict[str, Any]) -> None:
+        runs = dict(state.get("runs") or {})
+        run = dict(runs.get(cluster_id) or {})
+        if not run:
+            return
+        _set_agent_status(run, reviewer_agent_id, status="done", summary=summary)
+        _update_task_by_id(
+            run,
+            task_id,
+            state=next_state,
+            attempt_count=attempt_count,
+            review_outcome=outcome,
+            review_summary=summary,
+        )
+        _append_event(run, kind="task_reviewed", agent_id=reviewer_agent_id, summary=summary, detail=f"{task_id} / {outcome}")
+        _append_message(run, from_agent=reviewer_agent_id, to_agent="cluster", kind="review", content=summary)
+        if outcome == "rejected":
+            run["state"] = "error"
+            _set_current_execution(run, task_id=task_id, role="reviewer")
+        elif outcome == "changes_requested":
+            run["state"] = "working"
+            _set_current_execution(run, task_id=task_id, role="executor")
+        else:
+            run["state"] = "working"
+            _set_current_execution(run)
+        run["updated_at"] = _now_iso()
+        runs[cluster_id] = run
+        state["runs"] = runs
+
+    _update_state(mutator)
+
+
 def _select_dashboard_run(state: dict[str, Any]) -> dict[str, Any] | None:
     runs = dict(state.get("runs") or {})
     if not runs:
         return None
     order = list(state.get("run_order") or [])
     ordered_runs = [runs[item] for item in order if item in runs]
-    active = [run for run in ordered_runs if str(run.get("state") or "") in {"queued", "working", "waiting"}]
+    active = [run for run in ordered_runs if str(run.get("state") or "") in {"queued", "planning", "working", "reviewing", "waiting"}]
     if active:
         return active[-1]
     if not ordered_runs:
@@ -441,6 +527,8 @@ def build_cluster_projection() -> dict[str, Any]:
                 "events": [],
                 "last_event_at": "",
                 "updated_at": "",
+                "current_task_id": "",
+                "current_role": "",
                 "messages": [],
                 "tasks": [],
             },
@@ -457,6 +545,8 @@ def build_cluster_projection() -> dict[str, Any]:
             "events": list(run.get("events") or []),
             "last_event_at": str(run.get("last_event_at") or ""),
             "updated_at": str(run.get("updated_at") or ""),
+            "current_task_id": str(run.get("current_task_id") or ""),
+            "current_role": str(run.get("current_role") or ""),
             "messages": list(run.get("messages") or []),
             "tasks": list(run.get("tasks") or []),
         },
