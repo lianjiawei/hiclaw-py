@@ -47,9 +47,11 @@ async def run_agent_for_conversation(
         session_scope=conversation.session_scope,
         channel=conversation.channel,
     )
-    cluster_blueprint = build_cluster_blueprint(decision_plan) if cluster_enabled_for_plan(decision_plan) else None
-    if cluster_blueprint is not None:
-        start_cluster_run(conversation, cluster_blueprint, decision_plan)
+    cluster_blueprint = (
+        build_cluster_blueprint(decision_plan)
+        if config.AGENT_CLUSTER_ORCHESTRATOR_ENABLED and cluster_enabled_for_plan(decision_plan)
+        else None
+    )
     workflow_ctx = ToolContext(
         sender=sender,
         target_id=conversation.target_id,
@@ -163,12 +165,12 @@ async def run_agent_for_conversation(
 
     if cluster_blueprint is not None and config.AGENT_CLUSTER_ORCHESTRATOR_ENABLED:
         from hiclaw.cluster.orchestrator import (
-            render_cluster_orchestration_reply,
-            render_cluster_user_reply,
             run_cluster_tasks_serial,
             run_cluster_with_dynamic_planner,
         )
+        from hiclaw.cluster.response import render_cluster_orchestration_reply, render_cluster_user_reply
 
+        start_cluster_run(conversation, cluster_blueprint, decision_plan)
         if config.AGENT_CLUSTER_DYNAMIC_PLANNER_ENABLED:
             orchestration = await run_cluster_with_dynamic_planner(
                 conversation,

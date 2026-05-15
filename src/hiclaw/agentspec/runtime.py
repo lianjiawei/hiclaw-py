@@ -79,13 +79,15 @@ async def default_agent_task_runner(
 ) -> AgentReply:
     from hiclaw.agents.router import run_agent
 
+    base_scope = context.session_scope or context.conversation_key or "agent-task"
+    task_scope = f"{base_scope}:cluster:{context.cluster_id}:{_spec.name}:{_task.task_id}" if context.cluster_id else base_scope
     return await run_agent(
         prompt=prompt,
         sender=sender,
         target_id=context.target_id or context.conversation_key or "agent-task",
         continue_session=True,
         record_text=f"[AgentTask:{_spec.name}] {_task.title}",
-        session_scope=context.session_scope,
+        session_scope=task_scope,
         channel=context.channel,
     )
 

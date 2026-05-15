@@ -14,6 +14,7 @@ from telegram.error import InvalidToken, NetworkError, TelegramError, TimedOut
 from hiclaw.config import (
     FEISHU_APP_ID,
     FEISHU_APP_SECRET,
+    FEISHU_RESTART_DELAY_SECONDS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_RESTART_DELAY_SECONDS,
 )
@@ -88,42 +89,51 @@ class TelegramChannelRunner:
 
 class FeishuChannelRunner:
     def start(self) -> None:
-        try:
-            import lark_oapi as lark
+        while True:
+            try:
+                import lark_oapi as lark
 
-            lark_error_level = getattr(lark.LogLevel, "ERROR", getattr(lark.LogLevel, "INFO", 1))
-            lark_logger = getattr(lark, "logger", None)
-            if lark_logger is not None:
-                python_level = int(getattr(lark_error_level, "value", lark_error_level))
-                lark_logger.setLevel(python_level)
+                lark_error_level = getattr(lark.LogLevel, "ERROR", getattr(lark.LogLevel, "INFO", 1))
+                lark_logger = getattr(lark, "logger", None)
+                if lark_logger is not None:
+                    python_level = int(getattr(lark_error_level, "value", lark_error_level))
+                    lark_logger.setLevel(python_level)
 
-            client = build_feishu_client()
-            event_handler = build_event_handler(client)
-            ws_client = lark.ws.Client(
-                app_id=FEISHU_APP_ID,
-                app_secret=FEISHU_APP_SECRET,
-                event_handler=event_handler,
-                log_level=lark_error_level,
-                auto_reconnect=True,
-            )
-            print("Feishu bot: WebSocket long connection started.")
-            ws_client.start()
-        except KeyboardInterrupt:
-            print("Bot stopped.")
-        except Exception as exc:
-            if _is_feishu_config_error(exc):
-                _print_channel_config_error(
-                    "Feishu",
-                    "App credentials are invalid or no longer accepted. Feishu channel will stop now.",
-                    "Please update FEISHU_APP_ID / FEISHU_APP_SECRET in .env, or remove them if you only want to use hiclaw-tui / Telegram.",
+                client = build_feishu_client()
+                event_handler = build_event_handler(client)
+                ws_client = lark.ws.Client(
+                    app_id=FEISHU_APP_ID,
+                    app_secret=FEISHU_APP_SECRET,
+                    event_handler=event_handler,
+                    log_level=lark_error_level,
+                    auto_reconnect=True,
                 )
-            else:
-                _print_channel_config_error(
-                    "Feishu",
-                    "Channel startup failed and Feishu will stop now.",
-                    "Please check FEISHU_APP_ID / FEISHU_APP_SECRET, event subscription, and network connectivity.",
+                print("Feishu bot: WebSocket long connection started.")
+                ws_client.start()
+                logger.warning(
+                    "Feishu WebSocket client exited. Restarting in %s seconds...",
+                    FEISHU_RESTART_DELAY_SECONDS,
                 )
-            logger.error("Feishu runner stopped because startup failed: %s", exc)
+                time.sleep(FEISHU_RESTART_DELAY_SECONDS)
+            except KeyboardInterrupt:
+                print("Bot stopped.")
+                break
+            except Exception as exc:
+                if _is_feishu_config_error(exc):
+                    _print_channel_config_error(
+                        "Feishu",
+                        "App credentials are invalid or no longer accepted. Feishu channel will stop now.",
+                        "Please update FEISHU_APP_ID / FEISHU_APP_SECRET in .env, or remove them if you only want to use hiclaw-tui / Telegram.",
+                    )
+                    logger.error("Feishu runner stopped because startup failed: %s", exc)
+                    break
+                logger.warning(
+                    "Feishu runner failed: %s. Restarting in %s seconds...",
+                    exc,
+                    FEISHU_RESTART_DELAY_SECONDS,
+                    exc_info=True,
+                )
+                time.sleep(FEISHU_RESTART_DELAY_SECONDS)
 
 
 def _has_telegram_config() -> bool:

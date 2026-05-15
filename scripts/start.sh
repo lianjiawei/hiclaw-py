@@ -6,6 +6,8 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PID_FILE="$PROJECT_DIR/data/hiclaw.pid"
 LOG_FILE="$PROJECT_DIR/data/hiclaw.log"
 ENV_FILE="$PROJECT_DIR/.env"
+CORE_DIR="$PROJECT_DIR/pixel-office-core"
+CORE_DASHBOARD_FILE="$PROJECT_DIR/pixel-office-core/hiclaw-dashboard.html"
 
 cd "$PROJECT_DIR"
 
@@ -16,6 +18,13 @@ if [ -f "$PID_FILE" ]; then
         exit 1
     fi
     rm -f "$PID_FILE"
+fi
+
+if [ ! -d "$CORE_DIR" ]; then
+    echo "Warning: pixel-office-core directory not found: $CORE_DIR"
+elif [ ! -f "$CORE_DASHBOARD_FILE" ]; then
+    echo "Warning: core dashboard entry not found: $CORE_DASHBOARD_FILE"
+    echo "  Build or restore pixel-office-core assets before using /core."
 fi
 
 # 读取 dashboard 配置
@@ -49,8 +58,16 @@ PID=$!
 echo "$PID" > "$PID_FILE"
 
 # 等待 dashboard 启动（最多 5 秒）
+API_READY=0
+CORE_READY=0
 for i in $(seq 1 10); do
-    if curl -s "http://127.0.0.1:${DASHBOARD_PORT}/api/activity" >/dev/null 2>&1; then
+    if curl -fsS "http://127.0.0.1:${DASHBOARD_PORT}/api/activity" >/dev/null 2>&1; then
+        API_READY=1
+    fi
+    if [ -f "$CORE_DASHBOARD_FILE" ] && curl -fsS "http://127.0.0.1:${DASHBOARD_PORT}/core" >/dev/null 2>&1; then
+        CORE_READY=1
+    fi
+    if [ "$API_READY" -eq 1 ] && { [ ! -f "$CORE_DASHBOARD_FILE" ] || [ "$CORE_READY" -eq 1 ]; }; then
         break
     fi
     sleep 0.5
@@ -60,4 +77,15 @@ echo "Started. PID: $PID  |  Log: $LOG_FILE"
 echo "  tail -f $LOG_FILE"
 echo "  ./scripts/stop.sh"
 echo ""
+if [ "$API_READY" -ne 1 ]; then
+    echo "Warning: dashboard API health check did not pass: http://127.0.0.1:${DASHBOARD_PORT}/api/activity"
+fi
 echo "Dashboard: http://${ACCESS_HOST}:${DASHBOARD_PORT} (classic) | http://${ACCESS_HOST}:${DASHBOARD_PORT}/v2"
+if [ -f "$CORE_DASHBOARD_FILE" ]; then
+    echo "Core Dashboard: http://${ACCESS_HOST}:${DASHBOARD_PORT}/core"
+    if [ "$CORE_READY" -ne 1 ]; then
+        echo "Warning: core dashboard health check did not pass: http://127.0.0.1:${DASHBOARD_PORT}/core"
+    fi
+else
+    echo "Core Dashboard: unavailable (missing $CORE_DASHBOARD_FILE)"
+fi

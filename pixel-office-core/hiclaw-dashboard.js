@@ -10,8 +10,9 @@ const ui = {
 };
 
 const officeRoot = document.getElementById('office');
-const office = new PixelOfficeController(officeRoot, { zoom: 3.35 });
+const office = new PixelOfficeController(officeRoot, { zoom: 3.8 });
 const TILE_SIZE = 16;
+const VOID_TILE = 255;
 
 const applied = {
   agents: '',
@@ -23,13 +24,13 @@ let lastPayload = null;
 let hasLoadedOfficeLayout = false;
 
 office.on('agentClick', ({ id }) => {
-  office.dispatch({ type: 'focusAgent', id: null });
-  office.dispatch({ type: 'panTo', x: 0, y: 0 });
+  centerOfficeView();
 });
 
-window.addEventListener('resize', () => {
-  fitOfficeToStage();
-});
+window.addEventListener('resize', () => scheduleFitOfficeToStage());
+
+const officeResizeObserver = new ResizeObserver(() => scheduleFitOfficeToStage());
+officeResizeObserver.observe(officeRoot);
 
 function setConnectionState(text, tone = '') {
   ui.state.textContent = text;
@@ -86,8 +87,7 @@ function applyCommands(commands) {
       const signature = String(command.id ?? '');
       if (applied.focus === signature) continue;
       applied.focus = signature;
-      office.dispatch({ type: 'focusAgent', id: null });
-      office.dispatch({ type: 'panTo', x: 0, y: 0 });
+      centerOfficeView();
       continue;
     }
 
@@ -152,7 +152,8 @@ async function loadOfficeAssets() {
     const bundle = await withTimeout(loadAssetBundleFromBaseUrl('/core/public/assets'), 8000);
     office.loadAssets(bundle);
     hasLoadedOfficeLayout = true;
-    fitOfficeToStage();
+    scheduleFitOfficeToStage();
+    window.setTimeout(() => scheduleFitOfficeToStage(), 80);
     if (lastPayload) {
       resetAppliedCommands();
       applyCommands(lastPayload.commands);
@@ -163,21 +164,98 @@ async function loadOfficeAssets() {
   }
 }
 
+let fitFrame = 0;
+
+function scheduleFitOfficeToStage() {
+  if (fitFrame) window.cancelAnimationFrame(fitFrame);
+  fitFrame = window.requestAnimationFrame(() => {
+    fitFrame = 0;
+    fitOfficeToStage();
+  });
+}
+
 function fitOfficeToStage() {
   if (!hasLoadedOfficeLayout) return;
   const layout = office.officeState.getLayout();
   const rect = officeRoot.getBoundingClientRect();
   if (!layout.cols || !layout.rows || rect.width <= 0 || rect.height <= 0) return;
 
-  const dpr = window.devicePixelRatio || 1;
-  const worldWidth = layout.cols * TILE_SIZE;
-  const worldHeight = layout.rows * TILE_SIZE;
-  const targetWidth = rect.width * dpr * 0.82;
-  const targetHeight = rect.height * dpr * 0.86;
+  const dpr = Math.max(window.devicePixelRatio || 1, 1);
+  const visibleBounds = getVisibleLayoutBounds(layout);
+  const worldWidth = visibleBounds.width;
+  const worldHeight = visibleBounds.height;
+  const targetWidth = rect.width * dpr * 0.9;
+  const targetHeight = rect.height * dpr * 0.9;
   const fittedZoom = Math.min(targetWidth / worldWidth, targetHeight / worldHeight);
-  office.zoom = Math.max(3.35, Math.min(4.45, fittedZoom));
+  office.zoom = Math.max(3.8, Math.min(6.4, fittedZoom));
+  centerOfficeView(visibleBounds);
+}
+
+function centerOfficeView(bounds = null) {
+  if (!hasLoadedOfficeLayout) {
+    office.dispatch({ type: 'focusAgent', id: null });
+    office.dispatch({ type: 'panTo', x: 0, y: 0 });
+    return;
+  }
+
+  const layout = office.officeState.getLayout();
+  const visibleBounds = bounds || getVisibleLayoutBounds(layout);
+  const fullWorldWidth = layout.cols * TILE_SIZE;
+  const fullWorldHeight = layout.rows * TILE_SIZE;
+  const visibleCenterX = visibleBounds.x + visibleBounds.width / 2;
+  const visibleCenterY = visibleBounds.y + visibleBounds.height / 2;
+  const panX = fullWorldWidth * office.zoom / 2 - visibleCenterX * office.zoom;
+  const panY = fullWorldHeight * office.zoom / 2 - visibleCenterY * office.zoom;
   office.dispatch({ type: 'focusAgent', id: null });
-  office.dispatch({ type: 'panTo', x: 0, y: 0 });
+  office.dispatch({ type: 'panTo', x: panX, y: panY });
+}
+
+function getVisibleLayoutBounds(layout) {
+  let minCol = layout.cols;
+  let minRow = layout.rows;
+  let maxCol = -1;
+  let maxRow = -1;
+
+  for (let row = 0; row < layout.rows; row += 1) {
+    for (let col = 0; col < layout.cols; col += 1) {
+      const tile = layout.tiles[row * layout.cols + col];
+      if (tile === VOID_TILE) continue;
+      minCol = Math.min(minCol, col);
+      minRow = Math.min(minRow, row);
+      maxCol = Math.max(maxCol, col + 1);
+      maxRow = Math.max(maxRow, row + 1);
+    }
+  }
+
+  for (const item of layout.furniture || []) {
+    minCol = Math.min(minCol, item.col);
+    minRow = Math.min(minRow, item.row);
+    maxCol = Math.max(maxCol, item.col + 2);
+    maxRow = Math.max(maxRow, item.row + 2);
+  }
+
+  if (maxCol < minCol || maxRow < minRow) {
+    return {
+      x: 0,
+      y: 0,
+      width: layout.cols * TILE_SIZE,
+      height: layout.rows * TILE_SIZE,
+    };
+  }
+
+  const paddingX = 0.5;
+  const paddingY = 0.75;
+  minCol = Math.max(0, minCol - paddingX);
+  minRow = Math.max(0, minRow - paddingY);
+  maxCol = Math.min(layout.cols, maxCol + paddingX);
+  maxRow = Math.min(layout.rows, maxRow + paddingY);
+
+  return {
+    x: minCol * TILE_SIZE,
+    y: minRow * TILE_SIZE,
+    width: (maxCol - minCol) * TILE_SIZE,
+    height: (maxRow - minRow) * TILE_SIZE,
+  };
 }
 
 function withTimeout(promise, timeoutMs) {

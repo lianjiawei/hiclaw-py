@@ -186,20 +186,33 @@ def _tool_for_entry(entry: dict[str, Any]) -> str | None:
 def _status_command(entry: dict[str, Any]) -> dict[str, Any]:
     status = _status(entry)
     mode = _mode_for_entry(entry)
+    summary = str(entry.get("summary") or "")
 
     # Idle/queued agents should look alive in their own idle range, without a permanent bubble.
     if status in {"idle", "queued"}:
+        if "\u5df2\u53d6\u6d88\u5de5\u5177" in summary:
+            return {
+                "type": "setAgentStatus",
+                "id": _numeric_id(entry),
+                "text": "\u5df2\u53d6\u6d88\u5de5\u5177",
+                "detail": _compact_detail(summary),
+                "ttlSeconds": 2,
+            }
         return {"type": "setAgentStatus", "id": _numeric_id(entry), "text": "", "detail": ""}
 
-    # Built-in pixel-office-core sprites render waiting and permission/blocked states.
     if mode in {"waiting", "blocked"}:
-        return {"type": "setAgentStatus", "id": _numeric_id(entry), "text": "", "detail": ""}
+        return {
+            "type": "setAgentStatus",
+            "id": _numeric_id(entry),
+            "text": _status_text(entry),
+            "detail": _compact_detail(summary),
+        }
 
     command: dict[str, Any] = {
         "type": "setAgentStatus",
         "id": _numeric_id(entry),
         "text": _status_text(entry),
-        "detail": _compact_detail(str(entry.get("summary") or "")),
+        "detail": _compact_detail(summary),
     }
     if status == "done":
         command["ttlSeconds"] = 2
@@ -215,6 +228,12 @@ def _status_text(entry: dict[str, Any]) -> str:
         if role == "reviewer":
             return "\u590d\u6838\u4e2d"
         return "\u6267\u884c\u4e2d"
+    if status == "waiting":
+        return "\u9700\u8981\u6388\u6743" if _is_permission_wait(entry) else "\u7b49\u5f85\u4e2d"
+    if status == "error":
+        if "\u5df2\u53d6\u6d88\u5de5\u5177" in str(entry.get("summary") or ""):
+            return "\u5df2\u53d6\u6d88\u5de5\u5177"
+        return "\u6267\u884c\u53d7\u963b"
     if status == "done":
         return "\u5df2\u5b8c\u6210"
     return ""

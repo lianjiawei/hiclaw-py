@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -218,18 +219,26 @@ async def run_cluster_tasks_serial(
     runner: AgentTaskRunner | None = None,
 ) -> ClusterOrchestrationResult:
     results: list[AgentTaskResult] = []
+    completed_by_id: dict[str, AgentTaskResult] = {}
     cluster_tasks = tasks or build_cluster_tasks_from_blueprint(blueprint)
     if tasks is not None:
         replace_cluster_tasks(blueprint.cluster_id, cluster_tasks)
 
-    for cluster_task in cluster_tasks:
+    pending = {task.task_id: task for task in cluster_tasks}
+
+    async def run_one(cluster_task: ClusterTask) -> AgentTaskResult:
         spec_name = _agent_spec_name_for_task(blueprint, cluster_task)
         spec = require_agent_spec(spec_name)
         mark_cluster_task_started(blueprint.cluster_id, cluster_task.task_id, cluster_task.assigned_agent, cluster_task.title)
+        dependency_results = [
+            completed_by_id[task_id]
+            for task_id in cluster_task.depends_on
+            if task_id in completed_by_id
+        ]
         context = agent_task_context_from_conversation(
             conversation,
             cluster_id=blueprint.cluster_id,
-            shared_context=_shared_context_from_results(results),
+            shared_context=_shared_context_from_results(dependency_results or results),
         )
         result = await run_agent_task(
             spec,
@@ -238,7 +247,6 @@ async def run_cluster_tasks_serial(
             sender,
             runner=runner,
         )
-        results.append(result)
         output = result.text if result.success else result.error
         mark_cluster_task_finished(
             blueprint.cluster_id,
@@ -247,13 +255,35 @@ async def run_cluster_tasks_serial(
             output,
             success=result.success,
         )
-        if not result.success:
+        return result
+
+    while pending:
+        ready = [
+            task
+            for task in pending.values()
+            if all(dep in completed_by_id for dep in task.depends_on)
+        ]
+        if not ready:
+            blocked = ", ".join(sorted(pending))
             return ClusterOrchestrationResult(
                 cluster_id=blueprint.cluster_id,
                 success=False,
                 task_results=tuple(results),
-                error=result.error,
+                error=f"Cluster DAG has unresolved dependencies: {blocked}",
             )
+
+        layer_results = await asyncio.gather(*(run_one(task) for task in ready))
+        for cluster_task, result in zip(ready, layer_results):
+            pending.pop(cluster_task.task_id, None)
+            completed_by_id[cluster_task.task_id] = result
+            results.append(result)
+            if not result.success:
+                return ClusterOrchestrationResult(
+                    cluster_id=blueprint.cluster_id,
+                    success=False,
+                    task_results=tuple(results),
+                    error=result.error,
+                )
 
     return ClusterOrchestrationResult(
         cluster_id=blueprint.cluster_id,

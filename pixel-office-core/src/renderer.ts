@@ -13,6 +13,43 @@ interface ZDrawable {
   draw: (ctx: CanvasRenderingContext2D) => void;
 }
 
+function normalizeBubbleText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function getBubbleTone(ch: Character): { accent: string; shadow: string } {
+  if (ch.bubbleType === 'permission') return { accent: '#cca700', shadow: 'rgba(204, 167, 0, 0.2)' };
+  if (ch.bubbleType === 'waiting') return { accent: '#44bb66', shadow: 'rgba(68, 187, 102, 0.18)' };
+  if (ch.statusText?.includes('完成')) return { accent: '#44bb66', shadow: 'rgba(68, 187, 102, 0.16)' };
+  if (ch.currentTool) return { accent: '#7c9bff', shadow: 'rgba(124, 155, 255, 0.16)' };
+  return { accent: '#9aa7b9', shadow: 'rgba(154, 167, 185, 0.14)' };
+}
+
+function drawScrollingText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, speed = 1): void {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return;
+  const textWidth = ctx.measureText(normalized).width;
+  if (textWidth <= maxWidth) {
+    ctx.fillText(normalized, x, y);
+    return;
+  }
+  const gap = 24;
+  const cycle = textWidth + gap;
+  const elapsed = performance.now() / 1000;
+  const shift = (elapsed * 18 * speed) % cycle;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y - 1, maxWidth, Math.max(12, Number.parseInt(ctx.font, 10) + 4));
+  ctx.clip();
+  ctx.fillText(normalized, x - shift, y);
+  ctx.fillText(normalized, x - shift + cycle, y);
+  ctx.restore();
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   canvasWidth: number,
@@ -112,7 +149,7 @@ function renderBubbles(ctx: CanvasRenderingContext2D, characters: Character[], o
     if (!ch.bubbleType && !ch.statusText && !ch.statusDetail) continue;
     if (ch.statusText || ch.statusDetail) {
       renderStatusBubble(ctx, ch, offsetX, offsetY, zoom);
-      continue;
+      if (!ch.bubbleType) continue;
     }
     const sprite = ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE;
     let alpha = 1.0;
@@ -134,27 +171,54 @@ function renderStatusBubble(ctx: CanvasRenderingContext2D, ch: Character, offset
   const sittingOff = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
   const centerX = Math.round(offsetX + ch.x * zoom);
   const anchorY = Math.round(offsetY + (ch.y + sittingOff - BUBBLE_VERTICAL_OFFSET_PX) * zoom);
-  const width = Math.round(96 * Math.max(zoom / 2, 1));
-  const height = Math.round((ch.statusDetail ? 34 : 22) * Math.max(zoom / 2, 1));
+  const scale = Math.max(zoom / 2, 1);
+  const detail = normalizeBubbleText(ch.statusDetail || '');
+  const title = normalizeBubbleText(ch.statusText || detail);
+  const detailLine = ch.statusText ? detail : '';
+  const padding = Math.round(5 * scale);
+  const titleFont = Math.max(10, Math.round(6 * zoom));
+  const detailFont = Math.max(9, Math.round(5 * zoom));
+
+  ctx.save();
+  ctx.font = `${titleFont}px monospace`;
+  const titleWidth = ctx.measureText(title).width;
+  ctx.font = `${detailFont}px monospace`;
+  const detailWidth = detailLine ? ctx.measureText(detailLine).width : 0;
+  const measuredWidth = Math.max(titleWidth, detailWidth) + padding * 2 + Math.round(9 * scale);
+  const width = Math.round(clamp(measuredWidth, 88 * scale, 132 * scale));
+  const height = Math.round((detailLine ? 36 : 24) * scale);
   const x = Math.round(centerX - width / 2);
   const y = Math.round(anchorY - height - 6 * zoom);
   const tail = Math.max(4, Math.round(3 * zoom));
-  const padding = Math.max(6, Math.round(4 * zoom));
+  const tone = getBubbleTone(ch);
 
-  ctx.save();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = tone.shadow;
+  ctx.fillRect(x + Math.round(2 * scale), y + Math.round(2 * scale), width, height);
+  ctx.fillStyle = '#555566';
   ctx.fillRect(x, y, width, height);
   ctx.fillRect(centerX - tail, y + height, tail * 2, tail);
+  ctx.fillStyle = '#f7f8ff';
+  ctx.fillRect(x + 2, y + 2, width - 4, height - 4);
   ctx.fillStyle = '#eef2fb';
-  ctx.fillRect(x + 3, y + 3, width - 6, height - 6);
+  ctx.fillRect(x + 4, y + 4, width - 8, height - 8);
+  ctx.fillStyle = tone.accent;
+  ctx.fillRect(x + 4, y + 4, Math.max(3, Math.round(3 * scale)), height - 8);
+
   ctx.fillStyle = '#1f2b45';
-  ctx.font = `${Math.max(10, Math.round(6 * zoom))}px monospace`;
   ctx.textBaseline = 'top';
-  drawClippedText(ctx, ch.statusText || '', x + padding, y + padding, width - padding * 2);
-  if (ch.statusDetail) {
+  ctx.font = `${titleFont}px monospace`;
+  drawScrollingText(ctx, title, x + padding + Math.round(3 * scale), y + padding, width - padding * 2 - Math.round(3 * scale));
+  if (detailLine) {
     ctx.fillStyle = '#61708f';
-    ctx.font = `${Math.max(9, Math.round(5 * zoom))}px monospace`;
-    drawClippedText(ctx, ch.statusDetail, x + padding, y + padding + Math.round(11 * Math.max(zoom / 2, 1)), width - padding * 2);
+    ctx.font = `${detailFont}px monospace`;
+    drawScrollingText(
+      ctx,
+      detailLine,
+      x + padding + Math.round(3 * scale),
+      y + padding + Math.round(11 * scale),
+      width - padding * 2 - Math.round(3 * scale),
+      0.62,
+    );
   }
   ctx.restore();
 }
