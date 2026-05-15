@@ -1,0 +1,43 @@
+import type { AgentMode, Character, FurnitureInstance, OfficeLayout, PixelOfficeAgentInput, Seat, TileType as TileTypeVal } from './types.js';
+export declare class OfficeState {
+    layout: OfficeLayout;
+    tileMap: TileTypeVal[][];
+    seats: Map<string, Seat>;
+    blockedTiles: Set<string>;
+    furniture: FurnitureInstance[];
+    walkableTiles: Array<{
+        col: number;
+        row: number;
+    }>;
+    characters: Map<number, Character>;
+    cameraFollowId: number | null;
+    furnitureAnimTimer: number;
+    constructor(layout?: OfficeLayout);
+    getLayout(): OfficeLayout;
+    setLayout(layout: OfficeLayout): void;
+    update(dt: number): void;
+    getCharacters(): Character[];
+    setAgents(agents: PixelOfficeAgentInput[]): void;
+    upsertAgent(agent: PixelOfficeAgentInput): void;
+    removeAgent(id: number): void;
+    setAgentTool(id: number, tool: string | null): void;
+    setAgentStatus(id: number, text: string, detail?: string | null, ttlSeconds?: number | null): void;
+    setAgentActive(id: number, isActive: boolean, tool?: string | null): void;
+    moveAgentTo(id: number, col: number, row: number): boolean;
+    stopAgent(id: number): void;
+    sendAgentToSeat(id: number): boolean;
+    seatAgentNow(id: number): boolean;
+    wanderAgent(id: number): void;
+    setAgentMode(id: number, mode: AgentMode, tool?: string | null): void;
+    private rebuildFurnitureInstances;
+    private isFurnitureNearAnySeat;
+    reassignSeat(id: number, seatId: string | null | undefined): void;
+    private ownSeatKey;
+    private withOwnSeatUnblocked;
+    showBubble(id: number, bubbleType: 'permission' | 'waiting'): void;
+    clearBubble(id: number): void;
+    moveCharacterToWalkable(id: number): void;
+    private placeCharacterAtSeat;
+    private isCharacterOnWalkableTile;
+    private findFreeSeat;
+}
