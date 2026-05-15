@@ -14,9 +14,11 @@ from tavily import TavilyClient
 
 import hiclaw.config as config
 from hiclaw.core.confirmation import ToolConfirmationRequest, has_session_tool_grant, request_tool_confirmation
+from hiclaw.core.agent_activity import mark_agent_tool_cancelled, mark_agent_tool_started, mark_agent_waiting
 from hiclaw.core.delivery import MessageSender, send_sender_file, send_sender_text
 from hiclaw.decision.trace import record_tool_trace_finish, record_tool_trace_start
 from hiclaw.core.types import ConversationRef
+from hiclaw.cluster.store import mark_cluster_agent_waiting, mark_cluster_task_finished, mark_cluster_task_started
 from hiclaw.tasks.repository import cancel_scheduled_task_record, list_scheduled_task_records
 from hiclaw.tasks.service import create_scheduled_task
 
@@ -30,6 +32,8 @@ _MCP_TYPE_MAP: dict[str, type[Any]] = {
     "boolean": bool,
     "number": float,
 }
+
+_AUTO_APPROVED_CURRENT_CONVERSATION_TOOLS = frozenset({"create_task", "send_message"})
 
 
 @dataclass(slots=True)
@@ -135,6 +139,8 @@ class ToolSpec:
         return self.summary_builder(arguments)
 
     def requires_confirmation(self) -> bool:
+        if self.name in _AUTO_APPROVED_CURRENT_CONVERSATION_TOOLS:
+            return False
         return self.confirmation.requires_confirmation
 
     def build_confirmation_prompt(self, arguments: dict[str, Any]) -> str | None:
@@ -910,8 +916,9 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: ToolContext) -
         summary=spec.build_summary(arguments),
         arguments=arguments,
     )
+    had_session_grant = bool(ctx.session_scope and has_session_tool_grant(ctx.session_scope, spec.name))
     if spec.requires_confirmation() and ctx.enforce_confirmations:
-        if ctx.session_scope and has_session_tool_grant(ctx.session_scope, spec.name):
+        if had_session_grant:
             result = await spec.handler(arguments, ctx)
             record_tool_trace_finish(ctx.session_scope, name=spec.name, success=not result.is_error, result_excerpt=result.to_text())
             return result
@@ -920,12 +927,14 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: ToolContext) -
             record_tool_trace_finish(ctx.session_scope, name=spec.name, success=False, result_excerpt=result.to_text())
             return result
         prompt = spec.build_confirmation_prompt(arguments) or f"请确认是否执行工具 `{name}`。"
+        confirmation_summary = spec.build_summary(arguments)
+        _mark_tool_confirmation_waiting(ctx, spec.name, confirmation_summary)
         approved = await request_tool_confirmation(
             ctx.sender,
             ctx.target_id,
             ToolConfirmationRequest(
                 tool_name=spec.name,
-                summary=spec.build_summary(arguments),
+                summary=confirmation_summary,
                 prompt=prompt,
                 risk_level=spec.risk_level,
                 category=spec.category,
@@ -938,12 +947,67 @@ async def execute_tool(name: str, arguments: dict[str, Any], ctx: ToolContext) -
             record_tool_trace_finish(ctx.session_scope, name=spec.name, success=False, result_excerpt=result.to_text())
             return result
         if not approved:
+            _mark_tool_confirmation_rejected(ctx, spec.name, confirmation_summary)
             result = _error_result(f"已取消执行工具 {name}。")
             record_tool_trace_finish(ctx.session_scope, name=spec.name, success=False, result_excerpt=result.to_text())
             return result
+    if spec.requires_confirmation() and ctx.enforce_confirmations and not had_session_grant:
+        _mark_tool_confirmation_resumed(ctx, spec.name, spec.build_summary(arguments))
     result = await spec.handler(arguments, ctx)
     record_tool_trace_finish(ctx.session_scope, name=spec.name, success=not result.is_error, result_excerpt=result.to_text())
     return result
+
+
+def _mark_tool_confirmation_waiting(ctx: ToolContext, tool_name: str, summary: str) -> None:
+    waiting_text = _confirmation_waiting_text(tool_name, summary)
+    if ctx.conversation:
+        mark_agent_waiting(ctx.conversation, waiting_text)
+    cluster_context = _cluster_context_from_session_scope(ctx.session_scope)
+    if cluster_context:
+        cluster_id, agent_id, _task_id = cluster_context
+        mark_cluster_agent_waiting(cluster_id, agent_id, waiting_text)
+
+
+def _mark_tool_confirmation_resumed(ctx: ToolContext, tool_name: str, summary: str) -> None:
+    resume_text = _compact_summary(f"\u7ee7\u7eed\u6267\u884c\u5de5\u5177\uff1a{tool_name} {summary}".strip())
+    if ctx.conversation:
+        mark_agent_tool_started(ctx.conversation, tool_name, resume_text)
+    cluster_context = _cluster_context_from_session_scope(ctx.session_scope)
+    if cluster_context:
+        cluster_id, agent_id, task_id = cluster_context
+        mark_cluster_task_started(cluster_id, task_id, agent_id, resume_text)
+
+
+def _mark_tool_confirmation_rejected(ctx: ToolContext, tool_name: str, summary: str) -> None:
+    rejected_text = _compact_summary(f"\u5df2\u53d6\u6d88\u5de5\u5177\uff1a{tool_name} {summary}".strip())
+    if ctx.conversation:
+        mark_agent_tool_cancelled(ctx.conversation, tool_name, rejected_text)
+    cluster_context = _cluster_context_from_session_scope(ctx.session_scope)
+    if cluster_context:
+        cluster_id, agent_id, task_id = cluster_context
+        mark_cluster_task_finished(cluster_id, task_id, agent_id, rejected_text, success=False)
+
+
+def _confirmation_waiting_text(tool_name: str, summary: str) -> str:
+    return _compact_summary(f"\u9700\u8981\u6388\u6743\uff1a{tool_name} {summary}".strip())
+
+
+def _compact_summary(value: str, max_length: int = 160) -> str:
+    normalized = " ".join(str(value or "").split())
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 1] + "\u2026"
+
+
+def _cluster_context_from_session_scope(session_scope: str | None) -> tuple[str, str, str] | None:
+    if not session_scope or ":cluster:" not in session_scope:
+        return None
+    tail = session_scope.split(":cluster:", 1)[1]
+    parts = tail.split(":", 2)
+    if len(parts) != 3 or not all(parts):
+        return None
+    cluster_id, agent_id, task_id = parts
+    return cluster_id, agent_id, task_id
 
 
 _REGISTRY, _REGISTRY_STATUS = build_tool_registry()

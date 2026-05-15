@@ -301,7 +301,37 @@ def parse_natural_schedule(text: str) -> ParsedSchedule | None:
         if result is not None:
             return result
 
+    prefixed = strip_schedule_request_prefix(normalized)
+    if prefixed != normalized:
+        for parser in parsers:
+            result = parser(prefixed, now)
+            if result is not None:
+                return result
+
     return None
+
+
+def strip_schedule_request_prefix(text: str) -> str:
+    normalized = text.strip()
+    prefixes = (
+        "记得",
+        "记一下",
+        "帮我",
+        "帮忙",
+        "请",
+        "麻烦",
+        "麻烦你",
+        "到时候",
+    )
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes:
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):].strip(" ，,。:：")
+                changed = True
+                break
+    return normalized
 
 
 def compute_next_run_after_execution(task: dict[str, Any]) -> tuple[datetime | None, str]:

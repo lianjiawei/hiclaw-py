@@ -286,6 +286,37 @@ def mark_agent_tool_finished(conversation: ConversationRef, tool_name: str, tool
     _update_state(mutator)
 
 
+def mark_agent_tool_cancelled(conversation: ConversationRef, tool_name: str, tool_status: str | None = None) -> None:
+    now = _now_iso()
+    safe_status = _compact_text(tool_status or tool_name, 160)
+
+    def mutator(state: dict[str, Any]) -> None:
+        agent = state["agent"]
+        active_runs = dict(agent.get("active_runs") or {})
+        active_runs.pop(conversation.conversation_key, None)
+        _, latest_run = _pick_latest_run(active_runs)
+        agent.update(
+            {
+                "state": "working" if active_runs else "idle",
+                "current_tool": str((latest_run or {}).get("current_tool") or ""),
+                "tool_status": safe_status,
+                "current_task": str((latest_run or {}).get("prompt") or safe_status),
+                "last_active_at": now,
+                "active_runs": active_runs,
+            }
+        )
+        _sync_named_agent(
+            state,
+            "main",
+            name="Main Agent",
+            role="primary",
+            status="working" if active_runs else "idle",
+            summary=safe_status,
+        )
+
+    _update_state(mutator)
+
+
 def mark_agent_waiting(conversation: ConversationRef, waiting_text: str | None = None) -> None:
     now = _now_iso()
     safe_text = _compact_text(waiting_text, 160)

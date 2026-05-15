@@ -1,0 +1,15 @@
+{
+  "name": "pixel-office-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone pixel office renderer extracted from pixel-agents",
+  "scripts": {
+    "preview": "npx serve . -l 4173",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

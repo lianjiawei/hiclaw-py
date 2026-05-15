@@ -3,8 +3,12 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+!/pixel-office-core/dist/
 wheels/
 *.egg-info
+
+# JavaScript dependencies
+node_modules/
 
 # Virtual environments
 .venv

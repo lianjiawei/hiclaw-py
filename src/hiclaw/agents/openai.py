@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import logging
+import re
 from typing import Any
 from urllib.parse import urljoin
 
@@ -53,9 +54,17 @@ IMAGE_REQUEST_KEYWORDS = (
     "头像",
     "海报",
     "插画",
-    "image",
-    "draw",
-    "generate",
+)
+
+IMAGE_REQUEST_PATTERNS = (
+    re.compile(r"\b(generate|create|make|draw|edit)\s+(an?\s+)?(image|picture|photo|poster|illustration|avatar)\b"),
+    re.compile(r"\b(image|picture|photo|poster|illustration|avatar)\s+(generation|editing|edit)\b"),
+)
+
+INTERNAL_TEXT_TASK_MARKERS = (
+    "[AgentTask:",
+    "## Output Contract",
+    "Task ID:",
 )
 
 
@@ -130,8 +139,15 @@ def extract_user_image_prompt(prompt: str, record_text: str | None) -> str:
 def wants_image_output(prompt: str, record_text: str | None, uploaded_image: Any | None) -> bool:
     """判断本轮是否应该走 OpenAI 图片生成/编辑，而不是普通文本回答。"""
 
+    if record_text and record_text.startswith("[AgentTask:"):
+        return False
+    if all(marker in prompt for marker in INTERNAL_TEXT_TASK_MARKERS):
+        return False
+
     user_prompt = extract_user_image_prompt(prompt, record_text).lower()
     if any(keyword.lower() in user_prompt for keyword in IMAGE_REQUEST_KEYWORDS):
+        return True
+    if any(pattern.search(user_prompt) for pattern in IMAGE_REQUEST_PATTERNS):
         return True
 
     return False
@@ -164,7 +180,7 @@ def build_openai_instructions(prompt: str, session_scope: str | None = None, dec
 1. 回答尽量使用自然、清晰的中文。
 2. 本模式当前可用工具有：{tool_list_text}。
 3. 当用户询问当前时间时，优先调用 `get_current_time`。
-4. 当用户需要联网搜索信息时，优先调用 `web_search`。
+4. 当用户需要联网搜索信息（天气、新闻、百科等）时，必须调用 `web_search`，禁止用 curl、wget、bash 等任何方式直接爬取网页替代搜索。
 5. 如果需要额外主动给当前会话发送一条消息，请调用 `send_message`。
 6. 可以使用文件查看、编辑、任务管理和 Bash 工具。
 7. 如果工具足以回答问题，先调用工具，再基于工具结果给出最终回答。

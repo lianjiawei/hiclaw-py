@@ -42,6 +42,8 @@ from hiclaw.core.response import AgentReply
 from hiclaw.config import (
     FEISHU_ALLOWED_CHAT_IDS,
     FEISHU_ALLOWED_OPEN_IDS,
+    FEISHU_API_RETRIES,
+    FEISHU_API_RETRY_DELAY_SECONDS,
     FEISHU_APP_ID,
     FEISHU_APP_SECRET,
     FEISHU_REPLY_PROCESSING_MESSAGE,
@@ -80,6 +82,31 @@ def parse_csv_set(value: str) -> set[str]:
 ALLOWED_OPEN_IDS = parse_csv_set(FEISHU_ALLOWED_OPEN_IDS)
 ALLOWED_CHAT_IDS = parse_csv_set(FEISHU_ALLOWED_CHAT_IDS)
 SEEN_MESSAGE_IDS: deque[str] = deque(maxlen=1000)
+
+
+async def call_feishu_api_with_retry(operation: str, call):
+    attempts = max(FEISHU_API_RETRIES, 0) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return await call()
+        except Exception:
+            if attempt >= attempts:
+                raise
+            delay = FEISHU_API_RETRY_DELAY_SECONDS * attempt
+            logger.warning(
+                "Feishu API %s failed on attempt %s/%s; retrying in %.1fs.",
+                operation,
+                attempt,
+                attempts,
+                delay,
+                exc_info=True,
+            )
+            await asyncio.sleep(delay)
+
+
+def raise_if_feishu_response_failed(response, operation: str) -> None:
+    if not response.success():
+        raise RuntimeError(f"Feishu {operation} failed: code={response.code}, msg={response.msg}")
 
 # 飞书交互式卡片消息使用 lark_md 标签，原生支持 Markdown 渲染。
 
@@ -313,9 +340,8 @@ async def send_text_message(client: lark.Client, chat_id: str, text: str) -> Non
         .build()
     )
 
-    response = await client.im.v1.message.acreate(request)
-    if not response.success():
-        raise RuntimeError(f"Feishu send message failed: code={response.code}, msg={response.msg}")
+    response = await call_feishu_api_with_retry("send message", lambda: client.im.v1.message.acreate(request))
+    raise_if_feishu_response_failed(response, "send message")
 
 
 async def upload_image_message(client: lark.Client, image_data: bytes, mime_type: str) -> str:
@@ -336,7 +362,7 @@ async def upload_image_message(client: lark.Client, image_data: bytes, mime_type
         .build()
     )
 
-    response = await client.im.v1.image.acreate(request)
+    response = await call_feishu_api_with_retry("upload image", lambda: client.im.v1.image.acreate(request))
     if not response.success() or response.data is None or not response.data.image_key:
         raise RuntimeError(f"Feishu upload image failed: code={response.code}, msg={response.msg}")
     return response.data.image_key
@@ -356,9 +382,8 @@ async def send_image_message(client: lark.Client, chat_id: str, image_key: str) 
         .build()
     )
 
-    response = await client.im.v1.message.acreate(request)
-    if not response.success():
-        raise RuntimeError(f"Feishu send image message failed: code={response.code}, msg={response.msg}")
+    response = await call_feishu_api_with_retry("send image message", lambda: client.im.v1.message.acreate(request))
+    raise_if_feishu_response_failed(response, "send image message")
 
 
 async def upload_file_message(client: lark.Client, file_data: bytes, file_name: str) -> str:
@@ -380,7 +405,7 @@ async def upload_file_message(client: lark.Client, file_data: bytes, file_name: 
         .build()
     )
 
-    response = await client.im.v1.file.acreate(request)
+    response = await call_feishu_api_with_retry("upload file", lambda: client.im.v1.file.acreate(request))
     if not response.success() or response.data is None or not response.data.file_key:
         raise RuntimeError(f"Feishu upload file failed: code={response.code}, msg={response.msg}")
     return response.data.file_key
@@ -400,9 +425,8 @@ async def send_file_message(client: lark.Client, chat_id: str, file_key: str) ->
         .build()
     )
 
-    response = await client.im.v1.message.acreate(request)
-    if not response.success():
-        raise RuntimeError(f"Feishu send file message failed: code={response.code}, msg={response.msg}")
+    response = await call_feishu_api_with_retry("send file message", lambda: client.im.v1.message.acreate(request))
+    raise_if_feishu_response_failed(response, "send file message")
 
 
 async def reply_agent_result(client: lark.Client, chat_id: str, reply: AgentReply) -> None:

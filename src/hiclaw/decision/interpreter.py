@@ -376,7 +376,33 @@ def _should_use_model(prompt: str, provider: str) -> bool:
     text = prompt.strip()
     if mode == "model":
         return True
-    return len(text) >= 18 and not text.startswith("/")
+    if text.startswith("/"):
+        return False
+    lowered = text.lower()
+    execution_markers = (
+        "分析",
+        "检查",
+        "对比",
+        "修复",
+        "实现",
+        "优化",
+        "重构",
+        "生成",
+        "创建",
+        "读取",
+        "搜索",
+        "调研",
+        "review",
+        "analyze",
+        "compare",
+        "implement",
+        "fix",
+        "refactor",
+        "workspace",
+    )
+    if len(text) < 40 and not any(marker in lowered for marker in execution_markers):
+        return False
+    return len(text) >= 18
 
 
 def _build_interpreter_prompt(prompt: str, context_summary: str = "") -> str:

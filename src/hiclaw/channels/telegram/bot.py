@@ -34,6 +34,8 @@ from hiclaw.core.confirmation import (
 from hiclaw.core.response import AgentFile, AgentReply
 from hiclaw.agents.router import AgentServiceError, build_telegram_conversation
 from hiclaw.config import (
+    TELEGRAM_API_RETRIES,
+    TELEGRAM_API_RETRY_DELAY_SECONDS,
     TELEGRAM_BOOTSTRAP_RETRIES,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CONNECT_TIMEOUT,
@@ -67,22 +69,60 @@ from hiclaw.decision.router import build_decision_plan
 logger = logging.getLogger(__name__)
 
 
+def _telegram_exc_info(exc: BaseException) -> tuple[type[BaseException], BaseException, object]:
+    return (type(exc), exc, exc.__traceback__)
+
+
+async def call_telegram_api_with_retry(operation: str, call):
+    attempts = max(TELEGRAM_API_RETRIES, 0) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return await call()
+        except NetworkError as exc:
+            if attempt >= attempts:
+                raise
+            delay = TELEGRAM_API_RETRY_DELAY_SECONDS * attempt
+            logger.warning(
+                "Telegram API %s failed on attempt %s/%s; retrying in %.1fs.",
+                operation,
+                attempt,
+                attempts,
+                delay,
+                exc_info=_telegram_exc_info(exc),
+            )
+            import asyncio
+
+            await asyncio.sleep(delay)
+
+
 @dataclass(slots=True)
 class TelegramMessageSender:
     bot: object
 
     async def send_text(self, target_id: str, text: str) -> None:
-        await self.bot.send_message(chat_id=int(target_id), text=text)
+        await call_telegram_api_with_retry(
+            "send message",
+            lambda: self.bot.send_message(chat_id=int(target_id), text=text),
+        )
 
     async def send_message(self, chat_id: str | int, text: str) -> None:
         await self.send_text(str(chat_id), text)
 
     async def send_file(self, chat_id: str | int, file_data: bytes, file_name: str) -> None:
         from io import BytesIO
-        await self.bot.send_document(
-            chat_id=int(chat_id),
-            document=BytesIO(file_data),
-            filename=file_name,
+
+        async def send_document() -> object:
+            document = BytesIO(file_data)
+            document.name = file_name
+            return await self.bot.send_document(
+                chat_id=int(chat_id),
+                document=document,
+                filename=file_name,
+            )
+
+        await call_telegram_api_with_retry(
+            "send document",
+            send_document,
         )
 
     async def confirm_tool_use(self, target_id: str, request: ToolConfirmationRequest) -> bool:
@@ -115,7 +155,15 @@ async def reply_plain_text(update: Update, text: str) -> None:
     if not update.message:
         return
 
-    await update.message.reply_text(text, disable_web_page_preview=True)
+    try:
+        await call_telegram_api_with_retry(
+            "reply plain text",
+            lambda: update.message.reply_text(text, disable_web_page_preview=True),
+        )
+    except NetworkError as exc:
+        logger.warning("Telegram plain text reply failed because the network is unavailable", exc_info=_telegram_exc_info(exc))
+    except TelegramError as exc:
+        logger.warning("Telegram plain text reply failed", exc_info=_telegram_exc_info(exc))
 
 
 async def reply_formatted_text(update: Update, text: str) -> None:
@@ -126,14 +174,23 @@ async def reply_formatted_text(update: Update, text: str) -> None:
 
     for chunk in format_telegram_text(text):
         try:
-            await update.message.reply_text(
-                chunk["text"],
-                parse_mode=chunk["parse_mode"],
-                disable_web_page_preview=True,
+            await call_telegram_api_with_retry(
+                "reply formatted text",
+                lambda: update.message.reply_text(
+                    chunk["text"],
+                    parse_mode=chunk["parse_mode"],
+                    disable_web_page_preview=True,
+                ),
             )
         except BadRequest:
             logger.warning("Telegram formatted reply failed, falling back to plain text", exc_info=True)
             await reply_plain_text(update, text)
+            return
+        except NetworkError as exc:
+            logger.warning("Telegram formatted reply failed because the network is unavailable", exc_info=_telegram_exc_info(exc))
+            return
+        except TelegramError as exc:
+            logger.warning("Telegram formatted reply failed", exc_info=_telegram_exc_info(exc))
             return
 
 
@@ -144,14 +201,28 @@ async def reply_agent_result(update: Update, reply: AgentReply) -> None:
         return
 
     for image in reply.images:
-        image_file = BytesIO(image.data)
-        image_file.name = f"generated.{image.mime_type.removeprefix('image/')}"
-        await update.message.reply_photo(photo=image_file, caption=image.caption)
+        image_name = f"generated.{image.mime_type.removeprefix('image/')}"
+
+        async def send_photo(data=image.data, name=image_name, caption=image.caption):
+            image_file = BytesIO(data)
+            image_file.name = name
+            return await update.message.reply_photo(photo=image_file, caption=caption)
+
+        await call_telegram_api_with_retry(
+            "reply photo",
+            send_photo,
+        )
 
     for f in reply.files:
-        file_obj = BytesIO(f.data)
-        file_obj.name = f.file_name
-        await update.message.reply_document(document=file_obj)
+        async def send_document(data=f.data, name=f.file_name):
+            file_obj = BytesIO(data)
+            file_obj.name = name
+            return await update.message.reply_document(document=file_obj)
+
+        await call_telegram_api_with_retry(
+            "reply document",
+            send_document,
+        )
 
     if reply.text.strip():
         await reply_formatted_text(update, reply.text)
@@ -734,6 +805,10 @@ async def show_provider(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """兜底记录没有被局部 handler 处理的异常。"""
+
+    if isinstance(context.error, NetworkError):
+        logger.warning("Telegram network error outside a local handler", exc_info=_telegram_exc_info(context.error))
+        return
 
     logger.error("Unhandled exception in Telegram application", exc_info=context.error)
 

@@ -1,0 +1,39 @@
+export const TILE_SIZE = 16;
+export const DEFAULT_COLS = 20;
+export const DEFAULT_ROWS = 11;
+
+export const WALK_SPEED_PX_PER_SEC = 48;
+export const WALK_FRAME_DURATION_SEC = 0.15;
+export const TYPE_FRAME_DURATION_SEC = 0.3;
+export const WANDER_PAUSE_MIN_SEC = 2;
+export const WANDER_PAUSE_MAX_SEC = 8;
+export const WANDER_MOVES_BEFORE_REST_MIN = 3;
+export const WANDER_MOVES_BEFORE_REST_MAX = 6;
+export const SEAT_REST_MIN_SEC = 12;
+export const SEAT_REST_MAX_SEC = 24;
+export const FURNITURE_ANIM_INTERVAL_SEC = 0.2;
+export const AUTO_ON_FACING_DEPTH = 3;
+export const AUTO_ON_SIDE_DEPTH = 2;
+
+export const MAX_DELTA_TIME_SEC = 0.1;
+export const CHARACTER_SITTING_OFFSET_PX = 6;
+export const CHARACTER_Z_SORT_OFFSET = 0.5;
+
+export const FALLBACK_FLOOR_COLOR = '#808080';
+export const WALL_COLOR = '#3A3A5C';
+export const CANVAS_ERROR_TILE_COLOR = '#FF00FF';
+
+export const CAMERA_FOLLOW_LERP = 0.1;
+export const CAMERA_FOLLOW_SNAP_THRESHOLD = 0.5;
+export const PAN_MARGIN_FRACTION = 0.25;
+
+export const PNG_ALPHA_THRESHOLD = 2;
+export const WALL_PIECE_WIDTH = 16;
+export const WALL_PIECE_HEIGHT = 32;
+export const WALL_GRID_COLS = 4;
+export const WALL_BITMASK_COUNT = 16;
+export const FLOOR_TILE_SIZE = 16;
+export const CHARACTER_DIRECTIONS = ['down', 'up', 'right'] as const;
+export const CHAR_FRAME_W = 16;
+export const CHAR_FRAME_H = 32;
+export const CHAR_FRAMES_PER_ROW = 7;

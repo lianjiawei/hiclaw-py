@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from hiclaw.agentspec.registry import require_agent_spec
 from hiclaw.config import AGENT_CLUSTER_ENABLED, AGENT_CLUSTER_REVIEW_ENABLED
 from hiclaw.core.types import ConversationRef
 from hiclaw.decision.models import DecisionPlan
@@ -25,35 +26,39 @@ def cluster_enabled_for_plan(plan: DecisionPlan) -> bool:
 
 def build_cluster_blueprint(plan: DecisionPlan) -> ClusterBlueprint:
     cluster_id = f"cluster-{uuid4().hex[:10]}"
+    planner_spec = require_agent_spec("planner")
+    executor_spec = require_agent_spec("executor")
     agents: list[ClusterAgent] = [
         ClusterAgent(
-            agent_id="planner",
+            agent_id=planner_spec.name,
             role="planner",
-            name="Planner",
+            name=planner_spec.title,
             objective=f"拆解目标并分发执行：{plan.task_intent.goal}",
+            spec_name=planner_spec.name,
         ),
         ClusterAgent(
-            agent_id="executor",
+            agent_id=executor_spec.name,
             role="executor",
-            name="Executor",
+            name=executor_spec.title,
             objective=plan.task_intent.expected_output or plan.task_intent.goal,
+            spec_name=executor_spec.name,
         ),
     ]
     if AGENT_CLUSTER_REVIEW_ENABLED and plan.intent_type in {"file_task", "research_task", "mixed_task", "workflow_task"}:
+        reviewer_spec = require_agent_spec("reviewer")
         agents.append(
             ClusterAgent(
-                agent_id="reviewer",
+                agent_id=reviewer_spec.name,
                 role="reviewer",
-                name="Reviewer",
+                name=reviewer_spec.title,
                 objective="检查结果完整性、风险和下一步建议",
+                spec_name=reviewer_spec.name,
             )
         )
     steps = [
         f"理解任务与策略：{plan.summary or plan.task_intent.goal}",
         f"执行主任务：{plan.task_intent.expected_output or plan.task_intent.goal}",
     ]
-    if any(agent.role == "reviewer" for agent in agents):
-        steps.append("复核执行结果并输出协作结论")
     return ClusterBlueprint(
         cluster_id=cluster_id,
         mode="collaborative",
