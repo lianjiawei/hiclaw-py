@@ -41,7 +41,8 @@ from hiclaw.memory.intent import build_memory_intent_ack, detect_memory_intent, 
 from hiclaw.memory.store import append_memory_candidate, append_structured_long_term_memory, clear_session_context, create_memory_metadata
 from hiclaw.tasks.runtime import start_background_scheduler, stop_background_scheduler
 from hiclaw.tasks.service import handle_task_command
-from hiclaw.memory.session import clear_session_id, get_session_file
+from hiclaw.tasks.store import init_task_db
+from hiclaw.memory.session import init_session_db, clear_session_id, get_session_file
 from hiclaw.skills.store import list_skills, get_skill, get_last_matched_skills
 
 TUI_SESSION_SCOPE_PREFIX = "tui"
@@ -625,6 +626,8 @@ async def submit_prompt(prompt: str, bot: ConsoleBot, state: TuiState) -> None:
 
 
 async def run_tui() -> None:
+    await init_task_db()
+    await init_session_db()
     configure_stdio()
     print_header()
     state = TuiState(session_scope=get_tui_scope(), provider=get_provider())
