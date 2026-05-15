@@ -180,7 +180,7 @@ def build_openai_instructions(prompt: str, session_scope: str | None = None, dec
 1. 回答尽量使用自然、清晰的中文。
 2. 本模式当前可用工具有：{tool_list_text}。
 3. 当用户询问当前时间时，优先调用 `get_current_time`。
-4. 当用户需要联网搜索信息时，优先调用 `web_search`。
+4. 当用户需要联网搜索信息（天气、新闻、百科等）时，必须调用 `web_search`，禁止用 curl、wget、bash 等任何方式直接爬取网页替代搜索。
 5. 如果需要额外主动给当前会话发送一条消息，请调用 `send_message`。
 6. 可以使用文件查看、编辑、任务管理和 Bash 工具。
 7. 如果工具足以回答问题，先调用工具，再基于工具结果给出最终回答。
