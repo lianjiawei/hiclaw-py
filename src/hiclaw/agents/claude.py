@@ -46,6 +46,42 @@ class ClaudeServiceError(Exception):
     """统一表示模型调用失败。"""
 
 
+class ClaudeConfigurationError(ClaudeServiceError):
+    """表示 Claude Provider 缺少必要配置。"""
+
+
+def build_claude_env() -> dict[str, str]:
+    """Build the Claude SDK environment and report missing config clearly."""
+
+    missing: list[str] = []
+    env: dict[str, str] = {}
+
+    api_key = (ANTHROPIC_API_KEY or "").strip()
+    if api_key:
+        env["ANTHROPIC_API_KEY"] = api_key
+    else:
+        missing.append("ANTHROPIC_API_KEY")
+
+    base_url = (ANTHROPIC_BASE_URL or "").strip()
+    if base_url:
+        env["ANTHROPIC_BASE_URL"] = base_url
+
+    model = (ANTHROPIC_MODEL or "").strip()
+    if model:
+        env["ANTHROPIC_MODEL"] = model
+
+    if missing:
+        missing_text = "、".join(missing)
+        raise ClaudeConfigurationError(
+            "Claude Provider 配置不完整，缺少环境变量："
+            f"{missing_text}。\n"
+            "请在项目根目录 `.env` 中补齐配置后重启服务；如果暂时不用 Claude，"
+            "可以设置 `AGENT_PROVIDER=openai` 或在会话里发送 `/openai` 切换到 OpenAI。"
+        )
+
+    return env
+
+
 def load_prompt_fragment(name: str) -> str | None:
     """从 workspace/prompts/ 加载 prompt 片段，文件不存在时返回 None。"""
     path = PROMPTS_DIR / f"{name}.md"
@@ -194,6 +230,7 @@ async def run_agent(
 ) -> str:
     """运行一次 Claude Agent，并负责 session 与对话记录落盘。"""
 
+    claude_env = build_claude_env()
     tool_server = build_mcp_server(
         sender=sender,
         target_id=target_id,
@@ -214,11 +251,7 @@ async def run_agent(
     saved_session_id = load_session_id(session_scope) if continue_session else None
     options = ClaudeAgentOptions(
         permission_mode="acceptEdits",
-        env={
-            "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
-            "ANTHROPIC_BASE_URL": ANTHROPIC_BASE_URL,
-            "ANTHROPIC_MODEL": ANTHROPIC_MODEL,
-        },
+        env=claude_env,
         cwd=str(WORKSPACE_DIR),
         tools=[],
         system_prompt=build_system_prompt(prompt, session_scope, decision_plan),
@@ -236,11 +269,7 @@ async def run_agent(
                 logger.warning("Claude returned empty response while resuming session %s; retrying without resume.", saved_session_id)
                 retry_options = ClaudeAgentOptions(
                     permission_mode="acceptEdits",
-                    env={
-                        "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY,
-                        "ANTHROPIC_BASE_URL": ANTHROPIC_BASE_URL,
-                        "ANTHROPIC_MODEL": ANTHROPIC_MODEL,
-                    },
+                    env=claude_env,
                     cwd=str(WORKSPACE_DIR),
                     tools=[],
                     system_prompt=build_system_prompt(prompt, session_scope, decision_plan),
@@ -251,6 +280,8 @@ async def run_agent(
                     resume=None,
                 )
                 response, latest_session_id = await collect_agent_response(prompt, retry_options)
+    except ClaudeConfigurationError:
+        raise
     except Exception as exc:
         logger.exception("Claude request failed")
         raise ClaudeServiceError("Failed to get response from Claude service.") from exc
