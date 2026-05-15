@@ -109,7 +109,108 @@ scripts/                    Linux 启停脚本
 
 如果通过主程序启动，dashboard 会随主进程一起启动。
 
-## 安装
+## Quickstart
+
+### 1. Install
+
+Linux / macOS / WSL2：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/install.sh | bash
+```
+
+Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/install.ps1 | iex
+```
+
+### 2. Configure
+
+```bash
+hiclaw setup
+```
+
+### 3. Check
+
+```bash
+hiclaw doctor
+```
+
+### 4. Run
+
+Linux / macOS / WSL2 后台运行，适合服务器长期在线：
+
+```bash
+hiclaw start
+hiclaw status
+hiclaw logs -f
+hiclaw stop
+```
+
+前台运行，适合本地调试或 Windows 原生环境：
+
+```bash
+hiclaw run
+```
+
+本地 TUI 调试：
+
+```bash
+hiclaw-tui
+```
+
+### 5. Uninstall
+
+Linux / macOS / WSL2：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/uninstall.sh | bash
+```
+
+Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/uninstall.ps1 | iex
+```
+
+卸载脚本默认会删除：
+
+- HiClaw 安装目录
+- 独立 Python 虚拟环境
+- `hiclaw` / `hiclaw-tui` / `hiclaw-dashboard` / `hiclaw-feishu` 命令包装器
+- Windows 用户 PATH 中的 HiClaw bin 目录
+
+如果你想保留安装目录里的 `.env`、`data/`、`workspace/` 等本地数据：
+
+```bash
+HICLAW_KEEP_DATA=1 curl -fsSL https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/uninstall.sh | bash
+```
+
+PowerShell：
+
+```powershell
+$env:HICLAW_KEEP_DATA="1"; irm https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/uninstall.ps1 | iex
+```
+
+## Website
+
+项目主页静态站点位于 `site/`：
+
+```bash
+cd site
+python -m http.server 8080
+```
+
+访问：
+
+```text
+http://127.0.0.1:8080
+```
+
+这个站点不依赖构建工具，可以直接部署到 GitHub Pages、Nginx、Cloudflare Pages 或任何静态托管服务。
+
+## 手动安装
 
 ### 环境要求
 
@@ -118,6 +219,25 @@ scripts/                    Linux 启停脚本
 - 推荐使用 `venv`
 - 如果要使用 `/core` dashboard，Linux 服务器推荐安装 Node.js 和 npm
 
+一键安装脚本默认会：
+
+- 克隆项目到 `~/.hiclaw/hiclaw-py`（Windows 为 `%LOCALAPPDATA%\HiClaw\hiclaw-py`）
+- 创建独立 Python 虚拟环境
+- 安装 `hiclaw`、`hiclaw-tui`、`hiclaw-dashboard`、`hiclaw-feishu` 命令
+- 如果检测到 npm，自动构建 `pixel-office-core`
+
+可通过环境变量自定义安装：
+
+```bash
+HICLAW_INSTALL_DIR=/opt/hiclaw HICLAW_BRANCH=master curl -fsSL https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/install.sh | bash
+```
+
+PowerShell：
+
+```powershell
+$env:HICLAW_INSTALL_DIR="$env:USERPROFILE\Apps\HiClaw"; irm https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/install.ps1 | iex
+```
+
 ### 1. 克隆仓库
 
 ```bash
@@ -125,7 +245,7 @@ git clone git@github.com:lianjiawei/hiclaw-py.git
 cd hiclaw-py
 ```
 
-### 2. 创建 Python 环境
+### 3. 创建 Python 环境
 
 Linux / macOS 推荐直接使用系统自带 `python3` + `venv`：
 
@@ -153,7 +273,7 @@ conda create -n hiclaw python=3.12 -y
 conda activate hiclaw
 ```
 
-### 3. 安装依赖
+### 4. 安装依赖
 
 ```bash
 python -m pip install -U pip
@@ -166,7 +286,7 @@ python -m pip install -e .
 python -m pip install -e ".[asr]"
 ```
 
-### 4. 可选：为 `/core` dashboard 准备前端依赖
+### 5. 可选：为 `/core` dashboard 准备前端依赖
 
 如果你会通过 Linux `scripts/start.sh` 启动，并且机器已经安装了 npm，脚本会自动在 `pixel-office-core/` 下执行：
 
@@ -184,7 +304,35 @@ cd ..
 
 ## 配置
 
-### 1. 复制配置模板
+### 1. 初始化配置向导
+
+新用户推荐直接运行初始化向导，它会自动创建 `.env`，并引导你选择 Provider、消息通道和 dashboard 监听地址：
+
+```bash
+python -m hiclaw setup
+```
+
+检查当前配置是否满足启动条件：
+
+```bash
+python -m hiclaw doctor
+```
+
+也可以用命令行直接写入配置，适合服务器或脚本化部署：
+
+```bash
+python -m hiclaw config set AGENT_PROVIDER=openai OPENAI_API_KEY=sk-xxx
+python -m hiclaw config set TELEGRAM_BOT_TOKEN=xxx OWNER_ID=123456
+python -m hiclaw config set HICLAW_DASHBOARD_HOST=0.0.0.0 HICLAW_DASHBOARD_PORT=8765
+```
+
+如果你只想本地调试，不需要 Telegram / Feishu，可以运行：
+
+```bash
+hiclaw-tui
+```
+
+### 2. 手动复制配置模板
 
 Linux / macOS：
 
@@ -198,7 +346,7 @@ Windows PowerShell：
 Copy-Item .env.example .env
 ```
 
-### 2. 最小可运行配置
+### 3. 最小可运行配置
 
 最少需要：
 
@@ -312,44 +460,76 @@ hiclaw-tui
 - 不想配置 Telegram / Feishu
 - 调试工具、workflow、memory
 
-### 方式 2：主应用
+### 方式 2：前台运行
 
 ```bash
-python -m hiclaw
+hiclaw run
 ```
 
 或：
 
 ```bash
-hiclaw
+python -m hiclaw run
 ```
 
 说明：
 
 - 这会启动已配置的消息通道
 - 也会同时启动 dashboard server
+- 终端关闭后服务会停止
+- 适合本地调试、Windows 原生环境，或交给 systemd/supervisor/docker 这类外部进程管理器托管
 - 如果没有配置 Telegram 或 Feishu，这个入口会直接报错；此时请使用 `hiclaw-tui`
 
-### 方式 3：Linux 服务器后台运行
+### 方式 3：后台运行
 
 ```bash
-./scripts/start.sh
+hiclaw start
 ```
 
-停止：
+查看后台状态：
 
 ```bash
-./scripts/stop.sh
+hiclaw status
 ```
 
-当前 `start.sh` 会做这些事：
+查看日志：
 
-- 启动 `python -m hiclaw`
+```bash
+hiclaw logs
+hiclaw logs -f
+```
+
+停止后台服务：
+
+```bash
+hiclaw stop
+```
+
+说明：
+
+- `hiclaw start` 等价于仓库内的 `scripts/start.sh`
+- `hiclaw stop` 等价于仓库内的 `scripts/stop.sh`
+- 后台模式会写入 `data/hiclaw.pid` 和 `data/hiclaw.log`
+- `hiclaw status` 检查 PID 是否还活着，并显示日志位置和 dashboard 地址
+- `hiclaw logs -f` 用于实时查看后台日志
+- 适合 Linux / macOS / WSL2 服务器长期运行
+
+当前后台启动会做这些事：
+
+- 运行 `hiclaw doctor` 做启动前配置检查
+- 启动 HiClaw 主应用
 - 检查 `.env` 中的 dashboard host / port
 - 自动输出 dashboard 访问地址
 - 检查 `/api/activity` 健康状态
 - 检查 `/core` 健康状态
 - 如果检测到 `pixel-office-core/package.json` 且系统有 npm，会自动构建 `pixel-office-core`
+
+如果你在仓库源码目录里，也可以直接使用：
+
+```bash
+./scripts/start.sh
+./scripts/stop.sh
+```
 
 ### 方式 4：单独启动 Dashboard
 
@@ -431,15 +611,16 @@ python -m pip install -e .
 python -m pip install -e ".[asr]"
 ```
 
-### 4. 配置 `.env`
+### 4. 检查或继续修改 `.env`
 
-复制模板：
+推荐先运行：
 
 ```bash
-cp .env.example .env
+python -m hiclaw setup
+python -m hiclaw doctor
 ```
 
-然后至少修改这些项：
+如果你手动编辑 `.env`，至少需要修改这些项：
 
 ```env
 AGENT_PROVIDER=claude
@@ -472,7 +653,7 @@ FEISHU_APP_SECRET=your_feishu_app_secret_here
 
 重要说明：
 
-- `python -m hiclaw` 需要至少一个消息通道配置成功，否则会直接报错
+- `python -m hiclaw` 启动前会检查关键配置，缺少 Provider key 或消息通道时会给出修复建议
 - 如果你只是想在服务器上先验证工具和模型，不配 Telegram / Feishu 时请用 `hiclaw-tui`
 - 如果你要公网访问 dashboard，`HICLAW_DASHBOARD_HOST` 必须设为 `0.0.0.0`
 
@@ -508,6 +689,7 @@ sudo ufw status
 
 `start.sh` 当前会：
 
+- 运行 `python -m hiclaw doctor` 做启动前配置检查
 - 启动 `python -m hiclaw`
 - 读取 `.env` 中的 dashboard host / port
 - 打印公网访问地址

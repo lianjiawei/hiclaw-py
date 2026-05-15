@@ -22,7 +22,7 @@ asr = [
 ]
 
 [project.scripts]
-hiclaw = "hiclaw.app:main"
+hiclaw = "hiclaw.cli:main"
 hiclaw-tui = "hiclaw.channels.tui:main"
 hiclaw-feishu = "hiclaw.channels.feishu.bot:main"
 hiclaw-dashboard = "hiclaw.monitor.server:main"

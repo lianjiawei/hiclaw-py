@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HiClaw - Industry Multi-Agent Operations</title>
+    <meta
+      name="description"
+      content="HiClaw is a multi-agent operations system for safe, stable, collaborative, and long-running industry workflows."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="HiClaw home">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48" role="img">
+            <path class="logo-shell" d="M8 8h10v13h12V8h10v32H30V27H18v13H8z" />
+            <path class="logo-flow" d="M15 35c7-13 12-20 20-25" />
+          </svg>
+        </span>
+        <span>HiClaw</span>
+      </a>
+      <nav class="nav">
+        <a href="#quickstart">Quickstart</a>
+        <a href="#features">Features</a>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#architecture">Architecture</a>
+      </nav>
+      <a class="header-cta" href="https://github.com/lianjiawei/hiclaw-py">GitHub</a>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Industry Intelligence · Multi-Agent Operations</p>
+          <h1>面向长期运行的行业智能体。</h1>
+          <p class="lead">
+            HiClaw 将规划员、执行员、复核员和用户自定义 Agent 组织成一个可运行的协同系统，
+            面向安全生产、稳定运营、自动化提醒、应急分析与长期运行任务。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#quickstart">Get started</a>
+            <a class="button secondary" href="#features">Explore features</a>
+          </div>
+        </div>
+
+        <div class="hero-panel" aria-label="HiClaw command preview">
+          <div class="terminal">
+            <div class="terminal-top">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="terminal-body">
+              <p><span class="muted">$</span> hiclaw setup</p>
+              <p class="terminal-output">选择 Provider、消息通道、Dashboard 监听地址</p>
+              <p><span class="muted">$</span> hiclaw start</p>
+              <p class="terminal-output">Dashboard: http://127.0.0.1:8765/core</p>
+              <p><span class="muted">$</span> hiclaw status</p>
+              <p class="terminal-output ok">HiClaw is running · 3 agents ready</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="quickstart" class="quickstart section">
+        <div class="section-heading">
+          <p class="eyebrow">Quickstart</p>
+          <h2>快速安装，清晰配置。</h2>
+        </div>
+        <div class="steps">
+          <article class="step">
+            <div class="step-title">
+              <span>1</span>
+              <h3>Install</h3>
+            </div>
+            <div class="code-row">
+              <code>curl -fsSL https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/install.sh | bash</code>
+              <button data-copy="curl -fsSL https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/install.sh | bash">Copy</button>
+            </div>
+            <p>Linux / macOS / WSL2 自动克隆、创建 venv、安装 CLI，并构建 Dashboard。</p>
+          </article>
+          <article class="step">
+            <div class="step-title">
+              <span>2</span>
+              <h3>Configure</h3>
+            </div>
+            <div class="code-row short">
+              <code>hiclaw setup</code>
+              <button data-copy="hiclaw setup">Copy</button>
+            </div>
+            <p>交互式创建 `.env`，引导配置 Provider、Telegram / Feishu 和 Dashboard。</p>
+          </article>
+          <article class="step">
+            <div class="step-title">
+              <span>3</span>
+              <h3>Operate</h3>
+            </div>
+            <div class="command-grid">
+              <code>hiclaw doctor</code>
+              <code>hiclaw start</code>
+              <code>hiclaw status</code>
+              <code>hiclaw logs -f</code>
+            </div>
+            <p>用于服务器长期运行；本地调试可以使用 `hiclaw run` 或 `hiclaw-tui`。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="features" class="section feature-section">
+        <div class="section-heading wide">
+          <p class="eyebrow">What it does</p>
+          <h2>为行业运营设计的多智能体协作。</h2>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <h3>多 Agent 协同</h3>
+            <p>规划、执行、复核可以各自承担任务，也可以由用户自定义 Agent 加入协同。</p>
+          </article>
+          <article>
+            <h3>行业任务自动化</h3>
+            <p>支持定时提醒、巡检记录、日报生成、风险排查和面向长期运行的行业任务。</p>
+          </article>
+          <article>
+            <h3>可观测 Dashboard</h3>
+            <p>像素办公室实时展示 Agent 状态、等待授权、工具调用和任务完成过程。</p>
+          </article>
+          <article>
+            <h3>稳定的配置体验</h3>
+            <p>首次启动前自动诊断 `.env`，用友好提示替代晦涩的底层异常。</p>
+          </article>
+          <article>
+            <h3>多通道入口</h3>
+            <p>支持 Telegram、Feishu、TUI 和后台服务模式，适配个人与团队使用方式。</p>
+          </article>
+          <article>
+            <h3>安全边界</h3>
+            <p>工具授权、工作区限制、日志追踪和后台状态命令帮助系统可控运行。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="dashboard" class="section dashboard-section">
+        <div class="section-heading">
+          <p class="eyebrow">Dashboard</p>
+          <h2>看得见的智能体运行状态。</h2>
+          <p>
+            HiClaw 的 Pixel Office Dashboard 将抽象任务状态转化为可观察的运行画面：
+            工作、等待、阻塞、完成和空闲都能被快速识别。
+          </p>
+        </div>
+        <div class="dashboard-mock">
+          <div class="mock-sidebar">
+            <div class="mock-brand"></div>
+            <div class="mock-card active"></div>
+            <div class="mock-card"></div>
+            <div class="mock-card"></div>
+          </div>
+          <div class="mock-office">
+            <div class="room room-left">
+              <span class="desk"></span>
+              <span class="agent blue"></span>
+              <span class="bubble">规划中</span>
+            </div>
+            <div class="room room-right">
+              <span class="table"></span>
+              <span class="agent green"></span>
+              <span class="agent pink"></span>
+              <span class="bubble second">等待授权</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="architecture" class="section architecture">
+        <div>
+          <p class="eyebrow">Architecture</p>
+          <h2>统一的智能体运行底座。</h2>
+        </div>
+        <div class="architecture-list">
+          <div>
+            <strong>Single Agent</strong>
+            <p>轻量任务直接走单 Agent 路径，降低响应延迟。</p>
+          </div>
+          <div>
+            <strong>Agent Cluster</strong>
+            <p>复杂任务按计划分解给 planner、executor、reviewer 并行或串行协作。</p>
+          </div>
+          <div>
+            <strong>Custom Agents</strong>
+            <p>通过能力目录扩展自定义 Agent，为行业流程沉淀专属角色。</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="brand">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48">
+            <path class="logo-shell" d="M8 8h10v13h12V8h10v32H30V27H18v13H8z" />
+            <path class="logo-flow" d="M15 35c7-13 12-20 20-25" />
+          </svg>
+        </span>
+        <span>HiClaw</span>
+      </div>
+      <p>Multi-agent intelligence for safe and stable industry operations.</p>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

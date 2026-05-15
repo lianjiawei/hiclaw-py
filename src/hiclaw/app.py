@@ -37,7 +37,7 @@ def main() -> None:
     if not available_channels:
         raise RuntimeError(
             "Neither TELEGRAM_BOT_TOKEN nor FEISHU_APP_ID/FEISHU_APP_SECRET is configured. "
-            "If you only want a local console, run `hiclaw-tui`."
+            "Run `python -m hiclaw setup` to configure a channel, or run `hiclaw-tui` for a local console."
         )
 
     print(f"Starting channels: {', '.join(channel.name for channel in available_channels)}")

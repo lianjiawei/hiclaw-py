@@ -76,6 +76,12 @@ if [ "$DASHBOARD_HOST" = "0.0.0.0" ] || [ "$DASHBOARD_HOST" = "127.0.0.1" ]; the
 fi
 
 echo "Starting HiClaw..."
+if ! python -m hiclaw doctor; then
+    echo ""
+    echo "HiClaw configuration is incomplete. Run this setup wizard first:"
+    echo "  python -m hiclaw setup"
+    exit 1
+fi
 nohup python -m hiclaw >> "$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"

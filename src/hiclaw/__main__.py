@@ -1,5 +1,5 @@
-from hiclaw.app import main
+from hiclaw.cli import main
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

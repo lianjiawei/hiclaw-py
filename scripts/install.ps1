@@ -1,0 +1,176 @@
+$ErrorActionPreference = "Stop"
+
+$RepoUrl = if ($env:HICLAW_REPO_URL) { $env:HICLAW_REPO_URL } else { "https://github.com/lianjiawei/hiclaw-py.git" }
+$Branch = if ($env:HICLAW_BRANCH) { $env:HICLAW_BRANCH } else { "master" }
+$InstallDir = if ($env:HICLAW_INSTALL_DIR) { $env:HICLAW_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "HiClaw\hiclaw-py" }
+$BinDir = if ($env:HICLAW_BIN_DIR) { $env:HICLAW_BIN_DIR } else { Join-Path $env:USERPROFILE ".hiclaw\bin" }
+
+function Write-Step {
+    param([string]$Message)
+    Write-Host "==> $Message" -ForegroundColor Cyan
+}
+
+function Write-Warn {
+    param([string]$Message)
+    Write-Host "Warning: $Message" -ForegroundColor Yellow
+}
+
+function Fail {
+    param([string]$Message)
+    Write-Host "Error: $Message" -ForegroundColor Red
+    exit 1
+}
+
+function Resolve-Python {
+    if ($env:PYTHON) {
+        $candidate = Get-Command $env:PYTHON -ErrorAction SilentlyContinue
+        if (-not $candidate) {
+            Fail "PYTHON=$env:PYTHON was not found."
+        }
+        return $candidate.Source
+    }
+
+    $candidates = @(
+        @{ Command = "py"; Args = @("-3.12") },
+        @{ Command = "python"; Args = @() },
+        @{ Command = "python3"; Args = @() }
+    )
+
+    foreach ($item in $candidates) {
+        $command = Get-Command $item.Command -ErrorAction SilentlyContinue
+        if (-not $command) {
+            continue
+        }
+        $versionCheck = @"
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+"@
+        $process = Start-Process -FilePath $command.Source -ArgumentList ($item.Args + @("-c", $versionCheck)) -Wait -PassThru -NoNewWindow
+        if ($process.ExitCode -eq 0) {
+            return (($command.Source, $item.Args) -join " ").Trim()
+        }
+    }
+
+    Fail "Python 3.12+ is required. Install Python 3.12 first, or set `$env:PYTHON."
+}
+
+function Invoke-Python {
+    param(
+        [string]$PythonCommand,
+        [string[]]$Arguments
+    )
+    $parts = $PythonCommand -split " "
+    $exe = $parts[0]
+    $prefixArgs = @()
+    if ($parts.Count -gt 1) {
+        $prefixArgs = $parts[1..($parts.Count - 1)]
+    }
+    & $exe @prefixArgs @Arguments
+}
+
+function Ensure-Git {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Fail "git is required. Install Git for Windows first."
+    }
+}
+
+function Install-Repo {
+    $parent = Split-Path -Parent $InstallDir
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+
+    if (Test-Path (Join-Path $InstallDir ".git")) {
+        Write-Step "Updating HiClaw at $InstallDir"
+        git -C $InstallDir fetch origin $Branch
+        git -C $InstallDir checkout $Branch
+        git -C $InstallDir pull --ff-only origin $Branch
+    } elseif (Test-Path $InstallDir) {
+        Fail "$InstallDir already exists but is not a git repository. Set HICLAW_INSTALL_DIR to another path."
+    } else {
+        Write-Step "Cloning HiClaw into $InstallDir"
+        git clone --branch $Branch $RepoUrl $InstallDir
+    }
+}
+
+function Install-PythonEnvironment {
+    param([string]$PythonCommand)
+    Write-Step "Preparing Python environment"
+    Invoke-Python $PythonCommand @("-m", "venv", (Join-Path $InstallDir ".venv"))
+    $venvPython = Join-Path $InstallDir ".venv\Scripts\python.exe"
+    & $venvPython -m pip install --upgrade pip
+    & $venvPython -m pip install -e $InstallDir
+}
+
+function Build-CoreDashboard {
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Warn "npm was not found. /core dashboard will be built later if npm is installed."
+        return
+    }
+    $coreDir = Join-Path $InstallDir "pixel-office-core"
+    if (-not (Test-Path (Join-Path $coreDir "package.json"))) {
+        return
+    }
+    Write-Step "Building pixel-office-core dashboard"
+    Push-Location $coreDir
+    try {
+        if (Test-Path "package-lock.json") {
+            npm ci
+        } else {
+            npm install
+        }
+        npm run build
+    } finally {
+        Pop-Location
+    }
+}
+
+function Write-CmdWrapper {
+    param([string]$Name)
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    $target = Join-Path $BinDir "$Name.cmd"
+    $script = "@echo off`r`n`"$InstallDir\.venv\Scripts\$Name.exe`" %*`r`n"
+    Set-Content -Path $target -Value $script -Encoding ASCII
+}
+
+function Install-Wrappers {
+    Write-Step "Installing command wrappers into $BinDir"
+    Write-CmdWrapper "hiclaw"
+    Write-CmdWrapper "hiclaw-tui"
+    Write-CmdWrapper "hiclaw-dashboard"
+    Write-CmdWrapper "hiclaw-feishu"
+}
+
+function Ensure-UserPath {
+    $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (($currentPath -split ";") -contains $BinDir) {
+        return
+    }
+    $newPath = if ([string]::IsNullOrWhiteSpace($currentPath)) { $BinDir } else { "$currentPath;$BinDir" }
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    $env:Path = "$env:Path;$BinDir"
+    Write-Warn "Added $BinDir to the user PATH. Open a new PowerShell window if commands are not found."
+}
+
+function Main {
+    Ensure-Git
+    $pythonCommand = Resolve-Python
+    Write-Step "Using Python: $pythonCommand"
+    Install-Repo
+    Install-PythonEnvironment $pythonCommand
+    Build-CoreDashboard
+    Install-Wrappers
+    Ensure-UserPath
+
+    Write-Host ""
+    Write-Step "HiClaw installed successfully"
+    Write-Host ""
+    Write-Host "Next steps:"
+    Write-Host "  hiclaw setup"
+    Write-Host "  hiclaw doctor"
+    Write-Host "  hiclaw run     # foreground mode on Windows"
+    Write-Host "  hiclaw start   # background mode on Linux/macOS/WSL2"
+    Write-Host ""
+    Write-Host "Install path:"
+    Write-Host "  $InstallDir"
+}
+
+Main
