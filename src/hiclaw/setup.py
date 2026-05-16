@@ -29,6 +29,7 @@ DEFAULTS: dict[str, str] = {
     "HICLAW_DASHBOARD_PORT": "8765",
     "WORKSPACE_DIR": "./workspace",
     "SCHEDULER_INTERVAL_SECONDS": "5",
+    "HICLAW_TUI_COLOR_MODE": "auto",
     "ASR_PROVIDER": "none",
     "SHOW_TOOL_TRACE": "0",
     "SESSION_TIMEOUT_SECONDS": "86400",

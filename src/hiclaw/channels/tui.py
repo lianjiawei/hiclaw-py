@@ -67,7 +67,21 @@ def _is_compat_color_mode() -> bool:
     if TUI_COLOR_MODE == "full":
         return False
     term_program = (os.getenv("TERM_PROGRAM", "") or "").lower()
-    return "xshell" in term_program
+    if "xshell" in term_program:
+        return True
+
+    term = (os.getenv("TERM", "") or "").lower()
+    colorterm = (os.getenv("COLORTERM", "") or "").lower()
+    ssh_session = any(os.getenv(name) for name in ("SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT"))
+
+    known_full_terminals = ("vscode", "apple_terminal", "iterm", "wezterm", "windows_terminal")
+    if any(name in term_program for name in known_full_terminals):
+        return False
+
+    if ssh_session and colorterm not in {"truecolor", "24bit"}:
+        return True
+
+    return term in {"xterm", "xterm-color", "vt100", "vt220", "ansi", "cygwin"}
 
 
 if _is_compat_color_mode():
