@@ -45,20 +45,193 @@
           </div>
         </div>
 
-        <div class="hero-panel" aria-label="HiClaw command preview">
-          <div class="terminal">
-            <div class="terminal-top">
-              <span></span>
-              <span></span>
-              <span></span>
+        <div class="hero-panel" aria-label="HiClaw enterprise operations preview">
+          <div class="ops-panel">
+            <div class="ops-top">
+              <div class="ops-brand-mini">
+                <span class="logo-mark mini" aria-hidden="true">
+                  <svg viewBox="0 0 48 48" role="img">
+                    <path class="logo-shell" d="M8 8h10v13h12V8h10v32H30V27H18v13H8z" />
+                    <path class="logo-flow" d="M15 35c7-13 12-20 20-25" />
+                  </svg>
+                </span>
+                <strong>HiClaw Ops Center</strong>
+              </div>
+              <div class="ops-status-row" aria-label="System status summary">
+                <span><i></i>系统健康</span>
+                <span>安全合规</span>
+                <span>3 个环境</span>
+                <span>10:24:35</span>
+              </div>
             </div>
-            <div class="terminal-body">
-              <p><span class="muted">$</span> hiclaw setup</p>
-              <p class="terminal-output">选择 Provider、消息通道、Dashboard 监听地址</p>
-              <p><span class="muted">$</span> hiclaw start</p>
-              <p class="terminal-output">Dashboard: http://127.0.0.1:8765/core</p>
-              <p><span class="muted">$</span> hiclaw status</p>
-              <p class="terminal-output ok">HiClaw is running · 3 agents ready</p>
+
+            <div class="ops-dashboard-grid">
+              <div class="event-panel">
+                <div class="ops-tabs">
+                  <span class="active">事件流</span>
+                  <span>Dashboard</span>
+                </div>
+                <div class="event-toolbar">
+                  <span>全部事件</span>
+                  <span><i></i>实时</span>
+                  <span>筛选</span>
+                </div>
+                <div class="event-stream" aria-label="Agent event stream">
+                  <article class="event-row alert">
+                    <span class="event-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M12 4.5v8" />
+                        <path d="M12 16.5h.01" />
+                        <path d="M10.4 3.4h3.2l6.1 14.2-1.8 2.9H6.1l-1.8-2.9z" />
+                      </svg>
+                    </span>
+                    <div>
+                      <time>10:24:12</time>
+                      <strong>生产线温度异常</strong>
+                      <p>产线 A12 温度超限，当前值 92.4°C，阈值 85°C</p>
+                    </div>
+                    <em>告警</em>
+                  </article>
+                  <article class="event-row">
+                    <span class="event-icon monitor" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M20 12a8 8 0 1 1-2.35-5.66" />
+                        <path d="M20 4.5v5h-5" />
+                        <path d="M12 8v4l3 2" />
+                      </svg>
+                    </span>
+                    <div>
+                      <time>10:24:13</time>
+                      <strong>监控 Agent 捕获异常信号</strong>
+                      <p>监控 Agent 已捕获温度异常信号并上报</p>
+                    </div>
+                    <em>已采集</em>
+                  </article>
+                  <article class="event-row blue">
+                    <span class="event-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M5 20V9" />
+                        <path d="M12 20V4" />
+                        <path d="M19 20v-7" />
+                        <path d="M3.5 20h17" />
+                      </svg>
+                    </span>
+                    <div>
+                      <time>10:24:15</time>
+                      <strong>分析 Agent 关联历史数据</strong>
+                      <p>已关联设备历史数据、环境因素、维护记录</p>
+                    </div>
+                    <em>分析中</em>
+                  </article>
+                  <article class="event-row amber">
+                    <span class="event-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M9 18h6" />
+                        <path d="M10 22h4" />
+                        <path d="M8.2 14.4a6.5 6.5 0 1 1 7.6 0c-.8.55-1.3 1.35-1.3 2.1h-5c0-.75-.5-1.55-1.3-2.1z" />
+                      </svg>
+                    </span>
+                    <div>
+                      <time>10:24:18</time>
+                      <strong>决策 Agent 生成处置建议</strong>
+                      <p>建议：降低负载，检查冷却系统，安排巡检</p>
+                    </div>
+                    <em>待确认</em>
+                  </article>
+                  <article class="event-row purple">
+                    <span class="event-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M21 3 10 14" />
+                        <path d="m21 3-7 18-4-7-7-4z" />
+                      </svg>
+                    </span>
+                    <div>
+                      <time>10:24:19</time>
+                      <strong>通知值班负责人</strong>
+                      <p>已通过企业微信群、短信通知相关负责人</p>
+                    </div>
+                    <em>已通知</em>
+                  </article>
+                  <article class="event-row">
+                    <span class="event-icon folder" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M3 7.5h6l2 2H21" />
+                        <path d="M3 7.5v11h18v-9H3" />
+                      </svg>
+                    </span>
+                    <div>
+                      <time>10:24:22</time>
+                      <strong>事件已归档</strong>
+                      <p>事件处理完成并归档，编号 INC-20240521-1024</p>
+                    </div>
+                    <em>已归档</em>
+                  </article>
+                </div>
+              </div>
+
+              <div class="dashboard-panel">
+                <div class="metric-grid" aria-label="Operational metrics">
+                  <article>
+                    <span>平均响应</span>
+                    <strong>2.4 <small>min</small></strong>
+                    <p>较昨日 <b>下降 18%</b></p>
+                  </article>
+                  <article>
+                    <span>风险闭环率</span>
+                    <strong>96<small>%</small></strong>
+                    <p>较昨日 <b>上升 5%</b></p>
+                  </article>
+                  <article>
+                    <span>在线 Agent</span>
+                    <strong>12</strong>
+                    <p>总数 16</p>
+                  </article>
+                  <article>
+                    <span>自动分派</span>
+                    <strong>89<small>%</small></strong>
+                    <p>较昨日 <b>上升 7%</b></p>
+                  </article>
+                </div>
+
+                <div class="workflow-panel" aria-label="Agent workflow">
+                  <h3>协同工作流</h3>
+                  <div class="workflow-line">
+                    <article>
+                      <span>1</span>
+                      <strong>Monitoring<br />Agent</strong>
+                      <p>监控</p>
+                    </article>
+                    <i></i>
+                    <article>
+                      <span>2</span>
+                      <strong>Analysis<br />Agent</strong>
+                      <p>分析</p>
+                    </article>
+                    <i></i>
+                    <article>
+                      <span>3</span>
+                      <strong>Decision<br />Agent</strong>
+                      <p>决策</p>
+                    </article>
+                    <i></i>
+                    <article>
+                      <span>4</span>
+                      <strong>Notify<br />Agent</strong>
+                      <p>通知</p>
+                    </article>
+                  </div>
+                </div>
+
+                <div class="system-panel" aria-label="System services status">
+                  <h3>系统状态</h3>
+                  <div>
+                    <span>数据接入 <b>正常</b></span>
+                    <span>模型服务 <b>正常</b></span>
+                    <span>任务队列 <b>正常</b></span>
+                    <span>存储服务 <b>正常</b></span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
