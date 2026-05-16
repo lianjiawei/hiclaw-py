@@ -247,7 +247,16 @@ def validate_env(values: dict[str, str] | None = None, *, require_channel: bool 
             issues.append(ConfigIssue("error", "missing_vosk_path", f"VOSK_MODEL_DIR 不存在：{model_dir}", "请确认模型目录路径。"))
 
     tavily = _value(values, "TAVILY_API_KEY")
-    if tavily and any(marker in tavily.lower() for marker in PLACEHOLDER_MARKERS):
+    if not tavily:
+        issues.append(
+            ConfigIssue(
+                "warning",
+                "missing_tavily_key",
+                "TAVILY_API_KEY 未配置，默认联网搜索工具会不可用。",
+                "如果你希望默认可用联网搜索，请在 .env 中设置 TAVILY_API_KEY，或运行 `python -m hiclaw setup`。",
+            )
+        )
+    elif any(marker in tavily.lower() for marker in PLACEHOLDER_MARKERS):
         issues.append(ConfigIssue("warning", "placeholder_tavily", "TAVILY_API_KEY 仍是模板占位值，联网搜索工具会不可用。", "不需要联网搜索可以留空；需要时填写真实 Tavily API Key。"))
 
     return issues
@@ -364,6 +373,16 @@ def run_setup(args: argparse.Namespace) -> int:
             if not _has_value(values, key):
                 updates[key] = ""
 
+    tavily_key = args.tavily_api_key or _value(values, "TAVILY_API_KEY")
+    if not args.non_interactive:
+        tavily_key = _prompt(
+            "TAVILY_API_KEY (可选，默认联网搜索使用)",
+            "" if not _has_value(values, "TAVILY_API_KEY") else tavily_key,
+            secret=True,
+        )
+    if tavily_key:
+        updates["TAVILY_API_KEY"] = tavily_key
+
     dashboard_host = args.dashboard_host or _value(values, "HICLAW_DASHBOARD_HOST") or DEFAULTS["HICLAW_DASHBOARD_HOST"]
     if not args.non_interactive:
         default_host = "127.0.0.1" if _is_windows() else dashboard_host
@@ -465,6 +484,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--owner-id")
     setup_parser.add_argument("--feishu-app-id")
     setup_parser.add_argument("--feishu-app-secret")
+    setup_parser.add_argument("--tavily-api-key")
     setup_parser.add_argument("--dashboard-host")
     setup_parser.add_argument("--dashboard-port")
 
