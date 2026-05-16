@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="HiClaw Pixel Office dashboard illustration">
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#050607" flood-opacity=".32"/>
+    </filter>
+    <pattern id="woodGrid" width="64" height="64" patternUnits="userSpaceOnUse">
+      <rect width="64" height="64" fill="#82502d"/>
+      <path d="M64 0H0V64" fill="none" stroke="#5d351f" stroke-width="2" opacity=".65"/>
+      <path d="M0 16H64M0 32H64M0 48H64" stroke="#754525" stroke-width="1" opacity=".28"/>
+    </pattern>
+    <pattern id="blueGrid" width="64" height="64" patternUnits="userSpaceOnUse">
+      <rect width="64" height="64" fill="#3f7194"/>
+      <path d="M64 0H0V64" fill="none" stroke="#28506e" stroke-width="2" opacity=".62"/>
+      <path d="M0 16H64M0 32H64M0 48H64" stroke="#5c8aab" stroke-width="1" opacity=".24"/>
+    </pattern>
+    <pattern id="checker" width="56" height="56" patternUnits="userSpaceOnUse">
+      <rect width="28" height="28" fill="#eeeeea"/>
+      <rect x="28" y="28" width="28" height="28" fill="#eeeeea"/>
+      <rect x="28" width="28" height="28" fill="#17191c"/>
+      <rect y="28" width="28" height="28" fill="#17191c"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="900" fill="#071018"/>
+  <rect x="28" y="28" width="1544" height="844" rx="22" fill="#101820" stroke="#263443" stroke-width="2" filter="url(#softShadow)"/>
+  <rect x="48" y="54" width="176" height="792" rx="10" fill="#111a23" stroke="#273442"/>
+
+  <g font-family="Inter, Arial, sans-serif">
+    <text x="78" y="100" fill="#69e3bd" font-size="18" font-weight="700" letter-spacing="2">SYSTEM</text>
+    <g transform="translate(72 126)">
+      <rect width="122" height="116" rx="8" fill="#0d151d" stroke="#273442"/>
+      <circle cx="24" cy="32" r="7" fill="#7fa2ff"/>
+      <text x="42" y="38" fill="#d8e3ef" font-size="16">Planning</text>
+      <circle cx="24" cy="64" r="7" fill="#65dfb7"/>
+      <text x="42" y="70" fill="#d8e3ef" font-size="16">Running</text>
+      <circle cx="24" cy="96" r="7" fill="#f3c65c"/>
+      <text x="42" y="102" fill="#d8e3ef" font-size="16">Review</text>
+    </g>
+    <g transform="translate(72 278)">
+      <rect width="122" height="96" rx="8" fill="#0d151d" stroke="#273442"/>
+      <text x="18" y="28" fill="#69e3bd" font-size="14" font-weight="700">TASKS</text>
+      <text x="18" y="72" fill="#79a6ff" font-size="42" font-weight="700">3</text>
+      <rect x="78" y="60" width="8" height="18" fill="#3b9278"/>
+      <rect x="92" y="48" width="8" height="30" fill="#4db394"/>
+      <rect x="106" y="34" width="8" height="44" fill="#65dfb7"/>
+    </g>
+    <g transform="translate(72 410)">
+      <rect width="122" height="98" rx="8" fill="#0d151d" stroke="#273442"/>
+      <text x="18" y="28" fill="#69e3bd" font-size="14" font-weight="700">AGENTS</text>
+      <g transform="translate(22 48)">
+        <rect x="0" y="16" width="22" height="28" fill="#82a2ff"/>
+        <rect x="6" y="5" width="10" height="12" fill="#f2d1aa"/>
+        <rect x="38" y="16" width="22" height="28" fill="#5bd9af"/>
+        <rect x="44" y="5" width="10" height="12" fill="#f2d1aa"/>
+        <rect x="76" y="16" width="22" height="28" fill="#f085b7"/>
+        <rect x="82" y="5" width="10" height="12" fill="#f2d1aa"/>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(250 62)">
+    <rect x="0" y="0" width="1288" height="776" fill="#070b10" stroke="#020405" stroke-width="4"/>
+    <rect x="28" y="28" width="720" height="720" fill="url(#woodGrid)" stroke="#050607" stroke-width="4"/>
+    <rect x="774" y="28" width="486" height="560" fill="url(#blueGrid)" stroke="#050607" stroke-width="4"/>
+    <rect x="774" y="588" width="486" height="160" fill="url(#checker)" stroke="#050607" stroke-width="4"/>
+    <rect x="748" y="272" width="26" height="126" fill="#162334"/>
+    <rect x="748" y="560" width="26" height="88" fill="#162334"/>
+
+    <g opacity=".98">
+      <rect x="108" y="62" width="116" height="18" fill="#8e6037"/>
+      <rect x="112" y="36" width="108" height="30" fill="#6d472c"/>
+      <rect x="126" y="42" width="10" height="22" fill="#e8d18c"/>
+      <rect x="142" y="42" width="10" height="22" fill="#ff96b6"/>
+      <rect x="158" y="42" width="10" height="22" fill="#69dfb8"/>
+      <rect x="174" y="42" width="10" height="22" fill="#f4cf68"/>
+      <rect x="190" y="42" width="10" height="22" fill="#e8eaf0"/>
+      <rect x="510" y="62" width="116" height="18" fill="#8e6037"/>
+      <rect x="514" y="36" width="108" height="30" fill="#6d472c"/>
+      <rect x="528" y="42" width="10" height="22" fill="#e8d18c"/>
+      <rect x="544" y="42" width="10" height="22" fill="#ff96b6"/>
+      <rect x="560" y="42" width="10" height="22" fill="#69dfb8"/>
+      <rect x="576" y="42" width="10" height="22" fill="#f4cf68"/>
+      <rect x="592" y="42" width="10" height="22" fill="#e8eaf0"/>
+      <circle cx="380" cy="54" r="28" fill="#f2f0e8" stroke="#1c2228" stroke-width="4"/>
+      <path d="M380 30v24l18 10" stroke="#e24f4f" stroke-width="4" fill="none"/>
+    </g>
+
+    <g>
+      <rect x="140" y="200" width="180" height="78" fill="#c49c61" stroke="#8a6339" stroke-width="5"/>
+      <rect x="190" y="156" width="74" height="54" fill="#d9d8cf"/>
+      <rect x="198" y="164" width="58" height="32" fill="#17212c"/>
+      <rect x="204" y="170" width="42" height="6" fill="#79a6ff"/>
+      <rect x="198" y="202" width="44" height="12" fill="#e9ecef"/>
+      <rect x="248" y="202" width="12" height="12" fill="#e9ecef"/>
+      <rect x="430" y="200" width="180" height="78" fill="#c49c61" stroke="#8a6339" stroke-width="5"/>
+      <rect x="480" y="156" width="74" height="54" fill="#d9d8cf"/>
+      <rect x="488" y="164" width="58" height="32" fill="#17212c"/>
+      <rect x="494" y="170" width="42" height="6" fill="#65dfb7"/>
+      <rect x="488" y="202" width="44" height="12" fill="#e9ecef"/>
+      <rect x="538" y="202" width="12" height="12" fill="#e9ecef"/>
+    </g>
+
+    <g>
+      <rect x="268" y="444" width="300" height="162" fill="#c49c61" stroke="#8a6339" stroke-width="5"/>
+      <rect x="296" y="412" width="48" height="68" fill="#d4d9de" stroke="#6e7984" stroke-width="4"/>
+      <rect x="404" y="412" width="48" height="68" fill="#d4d9de" stroke="#6e7984" stroke-width="4"/>
+      <rect x="296" y="562" width="48" height="68" fill="#d4d9de" stroke="#6e7984" stroke-width="4"/>
+      <rect x="404" y="562" width="48" height="68" fill="#d4d9de" stroke="#6e7984" stroke-width="4"/>
+      <rect x="210" y="468" width="34" height="64" fill="#a77747" stroke="#6f492b" stroke-width="4"/>
+      <rect x="588" y="468" width="34" height="64" fill="#a77747" stroke="#6f492b" stroke-width="4"/>
+      <rect x="210" y="590" width="34" height="64" fill="#a77747" stroke="#6f492b" stroke-width="4"/>
+      <rect x="588" y="590" width="34" height="64" fill="#a77747" stroke="#6f492b" stroke-width="4"/>
+    </g>
+
+    <g>
+      <rect x="840" y="214" width="224" height="54" fill="#c03564" stroke="#7c2344" stroke-width="5"/>
+      <rect x="798" y="386" width="62" height="132" fill="#d34a78" stroke="#8a284a" stroke-width="5"/>
+      <rect x="1072" y="386" width="62" height="132" fill="#d34a78" stroke="#8a284a" stroke-width="5"/>
+      <rect x="892" y="420" width="172" height="100" fill="#c49c61" stroke="#8a6339" stroke-width="5"/>
+      <circle cx="978" cy="470" r="16" fill="#e6e2d8" stroke="#464a50" stroke-width="4"/>
+      <rect x="840" y="550" width="224" height="54" fill="#c03564" stroke="#7c2344" stroke-width="5"/>
+    </g>
+
+    <g>
+      <rect x="904" y="54" width="326" height="72" fill="#162538" stroke="#273f59" stroke-width="4"/>
+      <rect x="928" y="74" width="90" height="12" fill="#65dfb7"/>
+      <rect x="928" y="96" width="150" height="8" fill="#587692"/>
+      <rect x="1100" y="76" width="22" height="34" fill="#69dfb8"/>
+      <rect x="1132" y="62" width="22" height="48" fill="#7fa2ff"/>
+      <rect x="1164" y="88" width="22" height="22" fill="#f3c65c"/>
+      <rect x="116" y="650" width="90" height="94" fill="#b9905a" stroke="#755132" stroke-width="5"/>
+      <path d="M86 628c20-68 52-70 60 0c10-42 42-48 42 10" fill="#5ac282" stroke="#2f7c55" stroke-width="5"/>
+      <rect x="1180" y="620" width="86" height="94" fill="#b9905a" stroke="#755132" stroke-width="5"/>
+      <path d="M1180 594c18-62 48-66 58-4c8-40 38-44 42 8" fill="#5ac282" stroke="#2f7c55" stroke-width="5"/>
+      <path d="M812 92c12-54 44-58 54 0c8-36 38-42 42 8" fill="#5ac282" stroke="#2f7c55" stroke-width="5"/>
+      <path d="M1180 92c12-54 44-58 54 0c8-36 38-42 42 8" fill="#5ac282" stroke="#2f7c55" stroke-width="5"/>
+    </g>
+
+    <g font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">
+      <g transform="translate(332 300)">
+        <rect width="118" height="42" fill="#fff" stroke="#d7d7d7" stroke-width="3"/>
+        <path d="M42 42h24v20z" fill="#fff"/>
+        <circle cx="22" cy="21" r="7" fill="#7fa2ff"/>
+        <text x="38" y="27" fill="#151a20">Planning</text>
+      </g>
+      <g transform="translate(622 300)">
+        <rect width="118" height="42" fill="#fff" stroke="#d7d7d7" stroke-width="3"/>
+        <path d="M42 42h24v20z" fill="#fff"/>
+        <circle cx="22" cy="21" r="7" fill="#65dfb7"/>
+        <text x="38" y="27" fill="#151a20">Running</text>
+      </g>
+      <g transform="translate(492 628)">
+        <rect width="104" height="42" fill="#fff" stroke="#d7d7d7" stroke-width="3"/>
+        <path d="M42 42h24v20z" fill="#fff"/>
+        <circle cx="22" cy="21" r="7" fill="#f3c65c"/>
+        <text x="38" y="27" fill="#151a20">Review</text>
+      </g>
+    </g>
+
+    <g>
+      <rect x="354" y="346" width="38" height="58" fill="#7fa2ff" stroke="#4866b6" stroke-width="5"/>
+      <rect x="362" y="326" width="22" height="20" fill="#f1d0aa"/>
+      <rect x="644" y="346" width="38" height="58" fill="#65dfb7" stroke="#3d997d" stroke-width="5"/>
+      <rect x="652" y="326" width="22" height="20" fill="#f1d0aa"/>
+      <rect x="520" y="674" width="38" height="58" fill="#f085b7" stroke="#9a5274" stroke-width="5"/>
+      <rect x="528" y="654" width="22" height="20" fill="#f1d0aa"/>
+    </g>
+  </g>
+</svg>
