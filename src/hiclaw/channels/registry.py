@@ -17,6 +17,7 @@ from hiclaw.config import (
     FEISHU_RESTART_DELAY_SECONDS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_RESTART_DELAY_SECONDS,
+    is_effectively_configured,
 )
 from hiclaw.core.delivery import DeliveryRouter
 from hiclaw.channels.feishu.bot import FeishuBotAdapter, build_event_handler, build_feishu_client
@@ -137,11 +138,11 @@ class FeishuChannelRunner:
 
 
 def _has_telegram_config() -> bool:
-    return bool(TELEGRAM_BOT_TOKEN)
+    return is_effectively_configured(TELEGRAM_BOT_TOKEN)
 
 
 def _has_feishu_config() -> bool:
-    return bool(FEISHU_APP_ID and FEISHU_APP_SECRET)
+    return is_effectively_configured(FEISHU_APP_ID) and is_effectively_configured(FEISHU_APP_SECRET)
 
 
 def _register_telegram_sender(router: DeliveryRouter) -> None:

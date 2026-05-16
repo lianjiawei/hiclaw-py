@@ -5,8 +5,27 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+PLACEHOLDER_MARKERS = (
+    "your_",
+    "your-",
+    "_here",
+    "example",
+    "changeme",
+    "replace_me",
+)
+
 # 固定从项目根目录加载 .env，避免从其他目录启动时读不到配置。
 load_dotenv(PROJECT_ROOT / ".env")
+
+
+def is_effectively_configured(value: str | None) -> bool:
+    if value is None:
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    return not any(marker in lowered for marker in PLACEHOLDER_MARKERS)
 
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
