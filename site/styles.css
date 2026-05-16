@@ -138,10 +138,10 @@ p {
 h1 {
   max-width: 720px;
   margin-bottom: 24px;
-  font-size: 52px;
+  font-size: 48px;
   font-weight: 560;
   letter-spacing: 0;
-  line-height: 1.12;
+  line-height: 1.2;
 }
 
 .lead {
