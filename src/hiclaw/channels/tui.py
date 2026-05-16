@@ -58,13 +58,33 @@ THEME_SECONDARY = "38;2;154;143;133"
 THEME_MUTED = "38;2;111;102;94"
 THEME_SOFT = "38;2;221;214;207"
 THEME_ERROR = "31;1"
+TUI_COLOR_MODE = (os.getenv("HICLAW_TUI_COLOR_MODE", "auto") or "auto").strip().lower()
+
+
+def _is_compat_color_mode() -> bool:
+    if TUI_COLOR_MODE == "compat":
+        return True
+    if TUI_COLOR_MODE == "full":
+        return False
+    term_program = (os.getenv("TERM_PROGRAM", "") or "").lower()
+    return "xshell" in term_program
+
+
+if _is_compat_color_mode():
+    THEME_PRIMARY = "33"
+    THEME_PRIMARY_BOLD = "1;33"
+    THEME_SECONDARY = "37"
+    THEME_MUTED = "90"
+    THEME_SOFT = "37"
+    THEME_ERROR = "31;1"
+
 PROMPT_STYLE = Style.from_dict(
     {
-        "completion-menu": "bg:#201c1a #ddd6cf",
-        "completion-menu.completion.current": "bg:#c77d2b #fffaf3 bold",
-        "completion-menu.meta.completion": "bg:#201c1a #9a8f85",
-        "completion-menu.meta.completion.current": "bg:#c77d2b #fff1dc",
-        "auto-suggestion": "#8b8178",
+        "completion-menu": "#ddd6cf" if _is_compat_color_mode() else "bg:#201c1a #ddd6cf",
+        "completion-menu.completion.current": "bold #ffd75f" if _is_compat_color_mode() else "bg:#c77d2b #fffaf3 bold",
+        "completion-menu.meta.completion": "#bfbfbf" if _is_compat_color_mode() else "bg:#201c1a #9a8f85",
+        "completion-menu.meta.completion.current": "#ffd75f" if _is_compat_color_mode() else "bg:#c77d2b #fff1dc",
+        "auto-suggestion": "#9e9e9e" if _is_compat_color_mode() else "#8b8178",
     }
 )
 
