@@ -15,6 +15,7 @@ ENV_EXAMPLE_FILE = PROJECT_ROOT / ".env.example"
 
 PLACEHOLDER_MARKERS = (
     "your_",
+    "your-",
     "_here",
     "example",
     "changeme",
@@ -47,8 +48,13 @@ DEFAULTS: dict[str, str] = {
     "TELEGRAM_POLLING_TIMEOUT": "30",
     "TELEGRAM_BOOTSTRAP_RETRIES": "5",
     "TELEGRAM_RESTART_DELAY_SECONDS": "10",
+    "TELEGRAM_API_RETRIES": "2",
+    "TELEGRAM_API_RETRY_DELAY_SECONDS": "1.5",
     "FEISHU_SESSION_SCOPE_PREFIX": "feishu",
     "FEISHU_REPLY_PROCESSING_MESSAGE": "1",
+    "FEISHU_RESTART_DELAY_SECONDS": "10",
+    "FEISHU_API_RETRIES": "2",
+    "FEISHU_API_RETRY_DELAY_SECONDS": "1.5",
 }
 
 
@@ -164,6 +170,11 @@ def _has_value(values: dict[str, str], key: str) -> bool:
     return not any(marker in lowered for marker in PLACEHOLDER_MARKERS)
 
 
+def _looks_like_placeholder(value: str) -> bool:
+    lowered = value.strip().lower()
+    return bool(lowered) and any(marker in lowered for marker in PLACEHOLDER_MARKERS)
+
+
 def _parse_int(value: str, default: int = 0) -> int:
     try:
         return int(value)
@@ -186,13 +197,23 @@ def validate_env(values: dict[str, str] | None = None, *, require_channel: bool 
         )
         return issues
 
-    provider = (_value(values, "AGENT_PROVIDER") or "claude").lower()
+    provider = (_value(values, "AGENT_PROVIDER") or DEFAULTS["AGENT_PROVIDER"]).lower()
     if provider not in {"claude", "openai"}:
         issues.append(ConfigIssue("error", "invalid_provider", "AGENT_PROVIDER 只能是 claude 或 openai。", "运行 `python -m hiclaw config set AGENT_PROVIDER=openai`。"))
     elif provider == "openai" and not _has_value(values, "OPENAI_API_KEY"):
         issues.append(ConfigIssue("error", "missing_openai_key", "当前 Provider 是 openai，但 OPENAI_API_KEY 未配置。", "在 .env 中设置 OPENAI_API_KEY，或运行 `python -m hiclaw setup`。"))
     elif provider == "claude" and not _has_value(values, "ANTHROPIC_API_KEY"):
         issues.append(ConfigIssue("error", "missing_claude_key", "当前 Provider 是 claude，但 ANTHROPIC_API_KEY 未配置。", "在 .env 中设置 ANTHROPIC_API_KEY，或切换 `AGENT_PROVIDER=openai`。"))
+
+    openai_base_url = _value(values, "OPENAI_BASE_URL")
+    if openai_base_url and _looks_like_placeholder(openai_base_url):
+        issues.append(ConfigIssue("warning", "placeholder_openai_base_url", "OPENAI_BASE_URL 仍是模板占位值。", "不用代理时请留空；使用兼容服务商时填写真实 /v1 地址。"))
+    anthropic_base_url = _value(values, "ANTHROPIC_BASE_URL")
+    if anthropic_base_url and _looks_like_placeholder(anthropic_base_url):
+        issues.append(ConfigIssue("warning", "placeholder_anthropic_base_url", "ANTHROPIC_BASE_URL 仍是模板占位值。", "不用代理时请留空；使用兼容服务商时填写真实地址。"))
+    image_base_url = _value(values, "OPENAI_IMAGE_BASE_URL")
+    if image_base_url and _looks_like_placeholder(image_base_url):
+        issues.append(ConfigIssue("warning", "placeholder_image_base_url", "OPENAI_IMAGE_BASE_URL 仍是模板占位值，图片工具会不可用。", "不用图片工具时请留空；需要图片能力时填写真实地址。"))
 
     telegram_ready = _has_value(values, "TELEGRAM_BOT_TOKEN") and _has_value(values, "OWNER_ID")
     feishu_ready = _has_value(values, "FEISHU_APP_ID") and _has_value(values, "FEISHU_APP_SECRET")
@@ -208,7 +229,8 @@ def validate_env(values: dict[str, str] | None = None, *, require_channel: bool 
 
     owner_id = _value(values, "OWNER_ID")
     if owner_id and "your_" not in owner_id.lower() and not owner_id.isdigit():
-        issues.append(ConfigIssue("warning", "invalid_owner_id", "OWNER_ID 应该是纯数字 Telegram user id。", "可以向 Telegram 的 @userinfobot 查询自己的 user id。"))
+        level = "error" if _has_value(values, "TELEGRAM_BOT_TOKEN") else "warning"
+        issues.append(ConfigIssue(level, "invalid_owner_id", "OWNER_ID 应该是纯数字 Telegram user id。", "可以向 Telegram 的 @userinfobot 查询自己的 user id。"))
 
     port = _parse_int(_value(values, "HICLAW_DASHBOARD_PORT") or DEFAULTS["HICLAW_DASHBOARD_PORT"])
     if port <= 0 or port > 65535:
@@ -249,12 +271,13 @@ def print_doctor_report(issues: list[ConfigIssue], *, quiet: bool = False) -> No
 
 
 def _prompt(label: str, default: str = "", *, secret: bool = False) -> str:
-    suffix = f" [{default}]" if default else ""
     if secret:
         import getpass
 
+        suffix = " [已配置，回车保留]" if default else ""
         value = getpass.getpass(f"{label}{suffix}: ").strip()
     else:
+        suffix = f" [{default}]" if default else ""
         value = input(f"{label}{suffix}: ").strip()
     return value or default
 
@@ -399,12 +422,28 @@ def run_config_set(pairs: Iterable[str]) -> int:
     return 0
 
 
-def run_config_get(keys: Iterable[str]) -> int:
+def _is_secret_key(key: str) -> bool:
+    upper = key.upper()
+    return any(marker in upper for marker in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+
+
+def _mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "******"
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def run_config_get(keys: Iterable[str], *, show_secrets: bool = False) -> int:
     _configure_stdio()
     values = load_env_values()
     selected = list(keys) or sorted(values)
     for key in selected:
-        print(f"{key}={values.get(key, '')}")
+        value = values.get(key, "")
+        if not show_secrets and _is_secret_key(key):
+            value = _mask_secret(value)
+        print(f"{key}={value}")
     return 0
 
 
@@ -439,6 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_parser.add_argument("pairs", nargs="+")
     get_parser = config_subparsers.add_parser("get", help="读取配置")
     get_parser.add_argument("keys", nargs="*")
+    get_parser.add_argument("--show-secrets", action="store_true", help="显示完整密钥值；默认会隐藏 KEY/TOKEN/SECRET/PASSWORD")
 
     subparsers.add_parser("run", help="前台启动 HiClaw 服务，适合本地调试或进程管理器托管")
     subparsers.add_parser("start", help="后台启动 HiClaw 服务，等价于 scripts/start.sh")

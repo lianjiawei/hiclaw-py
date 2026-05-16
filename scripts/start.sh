@@ -6,11 +6,13 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PID_FILE="$PROJECT_DIR/data/hiclaw.pid"
 LOG_FILE="$PROJECT_DIR/data/hiclaw.log"
 ENV_FILE="$PROJECT_DIR/.env"
+PYTHON_BIN="${HICLAW_PYTHON:-python}"
 CORE_DIR="$PROJECT_DIR/pixel-office-core"
 CORE_DASHBOARD_FILE="$PROJECT_DIR/pixel-office-core/hiclaw-dashboard.html"
 CORE_DIST_ENTRY="$PROJECT_DIR/pixel-office-core/dist/index.js"
 
 cd "$PROJECT_DIR"
+mkdir -p "$PROJECT_DIR/data"
 
 if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
@@ -76,13 +78,20 @@ if [ "$DASHBOARD_HOST" = "0.0.0.0" ] || [ "$DASHBOARD_HOST" = "127.0.0.1" ]; the
 fi
 
 echo "Starting HiClaw..."
-if ! python -m hiclaw doctor; then
-    echo ""
-    echo "HiClaw configuration is incomplete. Run this setup wizard first:"
-    echo "  python -m hiclaw setup"
+if ! "$PYTHON_BIN" -c "import hiclaw" >/dev/null 2>&1; then
+    echo "HiClaw is not installed in this Python environment: $PYTHON_BIN"
+    echo "Run one of these first:"
+    echo "  python -m pip install -e ."
+    echo "  curl -fsSL https://raw.githubusercontent.com/lianjiawei/hiclaw-py/master/scripts/install.sh | bash"
     exit 1
 fi
-nohup python -m hiclaw >> "$LOG_FILE" 2>&1 &
+if ! "$PYTHON_BIN" -m hiclaw doctor; then
+    echo ""
+    echo "HiClaw configuration is incomplete. Run this setup wizard first:"
+    echo "  hiclaw setup"
+    exit 1
+fi
+nohup "$PYTHON_BIN" -m hiclaw >> "$LOG_FILE" 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"
 

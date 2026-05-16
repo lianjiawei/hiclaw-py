@@ -13,6 +13,27 @@ warn() {
     printf '\033[1;33mWarning:\033[0m %s\n' "$1"
 }
 
+fail() {
+    printf '\033[1;31mError:\033[0m %s\n' "$1" >&2
+    exit 1
+}
+
+assert_safe_install_dir() {
+    local parent
+    local resolved
+    parent="$(dirname "$INSTALL_DIR")"
+    if [ -d "$parent" ]; then
+        resolved="$(cd "$parent" && pwd)/$(basename "$INSTALL_DIR")"
+    else
+        resolved="$INSTALL_DIR"
+    fi
+    case "$resolved" in
+        "/"|"$HOME"|"$HOME/"|"$HOME/.hiclaw"|"$HOME/.local"|"/opt"|"/usr"|"/usr/local"|"/tmp")
+            fail "Refusing to remove broad directory: $resolved. Set HICLAW_INSTALL_DIR to the exact HiClaw install path."
+            ;;
+    esac
+}
+
 remove_file() {
     local path="$1"
     if [ -e "$path" ] || [ -L "$path" ]; then
@@ -31,6 +52,9 @@ remove_dir() {
 
 main() {
     info "Uninstalling HiClaw"
+    if [ "$KEEP_DATA" != "1" ]; then
+        assert_safe_install_dir
+    fi
 
     remove_file "$BIN_DIR/hiclaw"
     remove_file "$BIN_DIR/hiclaw-tui"

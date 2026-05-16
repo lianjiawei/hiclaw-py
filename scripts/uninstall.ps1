@@ -14,6 +14,25 @@ function Write-Warn {
     Write-Host "Warning: $Message" -ForegroundColor Yellow
 }
 
+function Fail {
+    param([string]$Message)
+    Write-Host "Error: $Message" -ForegroundColor Red
+    exit 1
+}
+
+function Assert-SafeInstallDir {
+    $resolved = [System.IO.Path]::GetFullPath($InstallDir)
+    $home = [System.IO.Path]::GetFullPath($env:USERPROFILE)
+    $localAppData = [System.IO.Path]::GetFullPath($env:LOCALAPPDATA)
+    $root = [System.IO.Path]::GetPathRoot($resolved)
+    $broadPaths = @($root, $home, $localAppData, (Join-Path $env:LOCALAPPDATA "HiClaw"), (Join-Path $env:USERPROFILE ".hiclaw"))
+    foreach ($path in $broadPaths) {
+        if ($resolved.TrimEnd("\") -ieq ([System.IO.Path]::GetFullPath($path)).TrimEnd("\")) {
+            Fail "Refusing to remove broad directory: $resolved. Set HICLAW_INSTALL_DIR to the exact HiClaw install path."
+        }
+    }
+}
+
 function Remove-PathIfExists {
     param([string]$Path)
     if (Test-Path $Path) {
@@ -39,6 +58,9 @@ function Remove-UserPathEntry {
 
 function Main {
     Write-Step "Uninstalling HiClaw"
+    if (-not $KeepData) {
+        Assert-SafeInstallDir
+    }
 
     Remove-PathIfExists (Join-Path $BinDir "hiclaw.cmd")
     Remove-PathIfExists (Join-Path $BinDir "hiclaw-tui.cmd")

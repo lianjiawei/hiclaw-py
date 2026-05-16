@@ -245,7 +245,7 @@ git clone git@github.com:lianjiawei/hiclaw-py.git
 cd hiclaw-py
 ```
 
-### 3. 创建 Python 环境
+### 2. 创建 Python 环境
 
 Linux / macOS 推荐直接使用系统自带 `python3` + `venv`：
 
@@ -273,7 +273,7 @@ conda create -n hiclaw python=3.12 -y
 conda activate hiclaw
 ```
 
-### 4. 安装依赖
+### 3. 安装依赖
 
 ```bash
 python -m pip install -U pip
@@ -286,7 +286,7 @@ python -m pip install -e .
 python -m pip install -e ".[asr]"
 ```
 
-### 5. 可选：为 `/core` dashboard 准备前端依赖
+### 4. 可选：为 `/core` dashboard 准备前端依赖
 
 如果你会通过 Linux `scripts/start.sh` 启动，并且机器已经安装了 npm，脚本会自动在 `pixel-office-core/` 下执行：
 
@@ -326,6 +326,8 @@ python -m hiclaw config set TELEGRAM_BOT_TOKEN=xxx OWNER_ID=123456
 python -m hiclaw config set HICLAW_DASHBOARD_HOST=0.0.0.0 HICLAW_DASHBOARD_PORT=8765
 ```
 
+读取配置时默认会隐藏 `KEY` / `TOKEN` / `SECRET` / `PASSWORD` 类字段；排查问题时确实需要完整值，可以加 `--show-secrets`。
+
 如果你只想本地调试，不需要 Telegram / Feishu，可以运行：
 
 ```bash
@@ -362,16 +364,16 @@ AGENT_PROVIDER=claude
 
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ANTHROPIC_BASE_URL=
-ANTHROPIC_MODEL=your_claude_model_here
+ANTHROPIC_MODEL=
 
 WORKSPACE_DIR=./workspace
-TAVILY_API_KEY=your_tavily_api_key_here
+TAVILY_API_KEY=
 ```
 
 说明：
 
 - `hiclaw-tui` 不依赖 Telegram 或 Feishu
-- 如果要联网搜索，必须配置 `TAVILY_API_KEY`
+- 如果要联网搜索，必须配置 `TAVILY_API_KEY`；不需要搜索时可以留空
 
 #### 方案 B：Telegram Bot
 
@@ -382,7 +384,7 @@ TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 OWNER_ID=your_telegram_user_id_here
 
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
-TAVILY_API_KEY=your_tavily_api_key_here
+TAVILY_API_KEY=
 WORKSPACE_DIR=./workspace
 ```
 
@@ -398,7 +400,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_BASE_URL=
 OPENAI_MODEL=gpt-4o-mini
 
-TAVILY_API_KEY=your_tavily_api_key_here
+TAVILY_API_KEY=
 WORKSPACE_DIR=./workspace
 ```
 
@@ -427,7 +429,7 @@ CAPABILITY_WATCHER_INTERVAL_SECONDS=1.0
 
 - 云服务器上想从公网访问 dashboard，`HICLAW_DASHBOARD_HOST` 应设为 `0.0.0.0`
 - `SHOW_TOOL_TRACE=1` 适合调试
-- `TAVILY_API_KEY` 建议始终配置，否则 `web_search` 无法使用
+- `TAVILY_API_KEY` 控制 `web_search` 能力；不需要联网搜索时可以留空
 
 ### 4. Cluster 配置
 
@@ -627,9 +629,9 @@ AGENT_PROVIDER=claude
 
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ANTHROPIC_BASE_URL=
-ANTHROPIC_MODEL=your_claude_model_here
+ANTHROPIC_MODEL=
 
-TAVILY_API_KEY=your_tavily_api_key_here
+TAVILY_API_KEY=
 
 HICLAW_DASHBOARD_HOST=0.0.0.0
 HICLAW_DASHBOARD_PORT=8765
@@ -689,8 +691,8 @@ sudo ufw status
 
 `start.sh` 当前会：
 
-- 运行 `python -m hiclaw doctor` 做启动前配置检查
-- 启动 `python -m hiclaw`
+- 运行当前 HiClaw 命令所在 Python 的 `hiclaw doctor` 做启动前配置检查
+- 使用同一个 Python 启动 HiClaw 主进程
 - 读取 `.env` 中的 dashboard host / port
 - 打印公网访问地址
 - 检查 `/api/activity` 健康状态

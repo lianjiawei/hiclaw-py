@@ -6,26 +6,45 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SELF = Path(__file__).resolve()
-CHECK_SUFFIXES = {".py", ".md", ".toml", ".example", ".env"}
+CHECK_SUFFIXES = {".py", ".md", ".toml", ".example", ".env", ".sh", ".ps1", ".html", ".css", ".js"}
 CHECK_NAMES = {".env", ".env.example", ".editorconfig", ".gitignore"}
-SKIP_DIRS = {".git", ".venv", "__pycache__", "data", "workspace", "workspace_course"}
+SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    "data",
+    "workspace",
+    "workspace_course",
+    "node_modules",
+    "dist",
+}
 
-# 这些模式通常表示中文已经被错误代码页污染，或者被替换成了问号。
+# These patterns usually indicate mojibake caused by reading UTF-8 text through
+# a legacy Chinese code page, or replacement characters from a failed decode.
 BAD_PATTERNS = [
-    "????",
-    "??",
-    "锛",
-    "涓",
-    "歿",
-    "俓",
+    "\ufffd",
+    "锟",
     "�",
+    "鎵",
+    "閰",
+    "鏃",
+    "璇",
+    "鍙",
+    "涓",
+    "鐢",
+    "鍚",
+    "妫",
+    "鐘",
+    "淇",
+    "寤",
 ]
 
 
 def should_check(path: Path) -> bool:
     if path.resolve() == SELF:
         return False
-    if any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts):
+    relative_parts = path.relative_to(ROOT).parts
+    if any(part in SKIP_DIRS for part in relative_parts):
         return False
     return path.name in CHECK_NAMES or path.suffix in CHECK_SUFFIXES
 

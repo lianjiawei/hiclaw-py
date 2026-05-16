@@ -27,7 +27,7 @@ function Resolve-Python {
         if (-not $candidate) {
             Fail "PYTHON=$env:PYTHON was not found."
         }
-        return $candidate.Source
+        return [pscustomobject]@{ Exe = $candidate.Source; Args = @() }
     }
 
     $candidates = @(
@@ -47,7 +47,7 @@ raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
 "@
         $process = Start-Process -FilePath $command.Source -ArgumentList ($item.Args + @("-c", $versionCheck)) -Wait -PassThru -NoNewWindow
         if ($process.ExitCode -eq 0) {
-            return (($command.Source, $item.Args) -join " ").Trim()
+            return [pscustomobject]@{ Exe = $command.Source; Args = $item.Args }
         }
     }
 
@@ -56,16 +56,10 @@ raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
 
 function Invoke-Python {
     param(
-        [string]$PythonCommand,
+        [object]$PythonCommand,
         [string[]]$Arguments
     )
-    $parts = $PythonCommand -split " "
-    $exe = $parts[0]
-    $prefixArgs = @()
-    if ($parts.Count -gt 1) {
-        $prefixArgs = $parts[1..($parts.Count - 1)]
-    }
-    & $exe @prefixArgs @Arguments
+    & $PythonCommand.Exe @($PythonCommand.Args) @Arguments
 }
 
 function Ensure-Git {
@@ -92,7 +86,7 @@ function Install-Repo {
 }
 
 function Install-PythonEnvironment {
-    param([string]$PythonCommand)
+    param([object]$PythonCommand)
     Write-Step "Preparing Python environment"
     Invoke-Python $PythonCommand @("-m", "venv", (Join-Path $InstallDir ".venv"))
     $venvPython = Join-Path $InstallDir ".venv\Scripts\python.exe"
@@ -153,7 +147,7 @@ function Ensure-UserPath {
 function Main {
     Ensure-Git
     $pythonCommand = Resolve-Python
-    Write-Step "Using Python: $pythonCommand"
+    Write-Step "Using Python: $($pythonCommand.Exe) $($pythonCommand.Args -join ' ')"
     Install-Repo
     Install-PythonEnvironment $pythonCommand
     Build-CoreDashboard

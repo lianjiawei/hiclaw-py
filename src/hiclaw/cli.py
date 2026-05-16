@@ -31,7 +31,9 @@ def _run_shell_script(name: str) -> int:
         print(f"`hiclaw {name.removesuffix('.sh')}` 当前用于 Linux / macOS / WSL2 后台运行。")
         print("Windows 原生环境请使用前台模式：`hiclaw run`，或在 WSL2 中使用后台命令。")
         return 2
-    return subprocess.call(["bash", str(script_path)], cwd=str(PROJECT_ROOT))
+    env = os.environ.copy()
+    env.setdefault("HICLAW_PYTHON", sys.executable)
+    return subprocess.call(["bash", str(script_path)], cwd=str(PROJECT_ROOT), env=env)
 
 
 def run_status() -> int:
@@ -130,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.config_command == "set":
             return run_config_set(args.pairs)
         if args.config_command == "get":
-            return run_config_get(args.keys)
+            return run_config_get(args.keys, show_secrets=args.show_secrets)
         parser.error("config 需要子命令：set 或 get")
     if args.command == "run":
         _print_startup_preflight_error()
